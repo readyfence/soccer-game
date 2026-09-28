@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socker 26</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="vignette"></div>
+
+    <div id="hud" class="hidden">
+      <div id="scoreboard">
+        <div class="sb-team"><span class="badge sm" id="sb-home-badge"></span><span id="sb-home">HOM</span></div>
+        <div class="sb-score"><span id="sb-hs">0</span><span class="sep">-</span><span id="sb-as">0</span></div>
+        <div class="sb-team"><span id="sb-away">AWY</span><span class="badge sm" id="sb-away-badge"></span></div>
+        <div id="sb-clock">00:00</div>
+      </div>
+      <div id="commentary"></div>
+      <div id="banner"><div id="banner-text"></div><div id="banner-sub"></div></div>
+      <div id="power"><div id="power-label"></div><div id="power-track"><div id="power-fill"></div></div></div>
+      <div id="playercard">
+        <div id="pc-num">9</div>
+        <div id="pc-body">
+          <div id="pc-name">Player</div>
+          <div id="pc-stats"></div>
+        </div>
+        <div id="pc-ovr">80</div>
+      </div>
+      <canvas id="minimap" width="220" height="144"></canvas>
+      <div id="hint">H — controls &nbsp;·&nbsp; G — camera &nbsp;·&nbsp; Esc — pause</div>
+    </div>
+    <div id="nametag" class="hidden"></div>
+
+    <div id="replay" class="hidden">
+      <div class="bar top"></div>
+      <div class="bar bottom"></div>
+      <div id="replay-badge">REPLAY</div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="menu-inner">
+        <h1>SOCKER<span>26</span></h1>
+        <div class="select-row">
+          <div class="side">
+            <h2>Your club</h2>
+            <div class="club-grid" id="grid-user"></div>
+            <div class="club-info" id="info-user"></div>
+          </div>
+          <div class="vs">VS</div>
+          <div class="side">
+            <h2>Opponent (AI)</h2>
+            <div class="club-grid" id="grid-ai"></div>
+            <div class="club-info" id="info-ai"></div>
+          </div>
+        </div>
+        <div class="options">
+          <div class="opt">
+            <label>Difficulty</label>
+            <div class="seg" id="opt-diff">
+              <button data-v="easy">Amateur</button><button data-v="normal" class="on">Pro</button><button data-v="hard">World Class</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Match length</label>
+            <div class="seg" id="opt-len">
+              <button data-v="3">3 min</button><button data-v="5" class="on">5 min</button><button data-v="8">8 min</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Graphics</label>
+            <div class="seg" id="opt-gfx">
+              <button data-v="auto" class="on">Auto</button><button data-v="0">Ultra</button><button data-v="2">Medium</button><button data-v="3">Performance</button>
+            </div>
+          </div>
+          <button id="btn-controls" class="ghost">Controls</button>
+          <button id="btn-start" class="primary">KICK OFF</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="help" class="overlay hidden">
+      <div class="help-inner">
+        <h2>Controls</h2>
+        <div class="help-cols">
+          <div>
+            <h3>Keyboard — attacking</h3>
+            <table id="keys-attack"></table>
+          </div>
+          <div>
+            <h3>Keyboard — defending &amp; general</h3>
+            <table id="keys-defend"></table>
+          </div>
+          <div>
+            <h3>Gamepad</h3>
+            <table id="keys-pad"></table>
+          </div>
+        </div>
+        <p class="tip">Hold a kick button to charge power, release to kick. Hold a direction while kicking to aim; sideways input adds curve.</p>
+        <button class="primary" id="btn-help-close">Close</button>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Paused</h2>
+        <button class="primary" id="btn-resume">Resume</button>
+        <button class="ghost" id="btn-quit">Quit to menu</button>
+      </div>
+    </div>
+
+    <div id="fulltime" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Full time</h2>
+        <div id="ft-score"></div>
+        <div id="ft-result"></div>
+        <button class="primary" id="btn-rematch">Rematch</button>
+        <button class="ghost" id="btn-menu">Change teams</button>
+      </div>
+    </div>
+
+    <div id="loading" class="overlay"><div class="spinner"></div><div>Building stadium…</div></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
