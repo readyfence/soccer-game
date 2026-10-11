@@ -25,9 +25,9 @@ const bootMats = [0x111111, 0xffffff, 0xff3d00, 0x00e5ff, 0xffea00].map((c) => s
 export const POSE = {
   NONE: 0, ARMS_UP: 1, AIRPLANE: 2, KNEE_SLIDE: 3, HANDS_HEAD: 4, CROUCH: 5, HOLD: 6, CLAP: 7,
   SIUU: 8, SKY_POINT: 9, ARMS_CROSSED: 10, ZEN: 11, HEY_JUDE: 12, DANCE: 13, PRAYER: 14,
-  ICE_SLIDE: 15, COLD: 16, MASK: 17, KISS: 18,
+  ICE_SLIDE: 15, COLD: 16, MASK: 17, KISS: 18, THROW: 19,
 };
-export const KICK = { PASS: 0, SHOT: 1, POWER: 2, CHIP: 3, CLEAR: 4 };
+export const KICK = { PASS: 0, SHOT: 1, POWER: 2, CHIP: 3, CLEAR: 4, THROW: 5, BICYCLE: 6 };
 // [duration, backswing, followThrough, contact fraction]
 const KICK_ANIM = [
   [0.3, 0.45, 1.1, 0.35],
@@ -35,8 +35,13 @@ const KICK_ANIM = [
   [0.55, 1.2, 2.4, 0.45],
   [0.34, 0.55, 1.0, 0.4],
   [0.48, 1.1, 2.6, 0.4],
+  [0.62, 0.9, 1.5, 0.52],
+  [0.56, 1.3, 2.2, 0.40],
 ];
-export const kickContactDelay = (kind) => KICK_ANIM[kind][0] * KICK_ANIM[kind][3];
+export const kickContactDelay = (kind) => {
+  const a = KICK_ANIM[kind] ?? KICK_ANIM[1];
+  return a[0] * a[3];
+};
 
 // Serializable animation state, used by live play and replays.
 const FIELDS = ['phase', 'amp', 'speed', 'kickT', 'kickKind', 'tackleT', 'diveT', 'diveDir', 'fallT',
@@ -195,7 +200,7 @@ export class PlayerModel {
         if (s[name] >= dur) s[name] = 0;
       }
     };
-    if (s.kickT > 0) tick('kickT', KICK_ANIM[s.kickKind][0]);
+    if (s.kickT > 0) tick('kickT', (KICK_ANIM[s.kickKind] ?? KICK_ANIM[1])[0]);
     tick('tackleT', 0.75);
     tick('diveT', 1.3);
     tick('fallT', 1.7);
@@ -417,11 +422,48 @@ export class PlayerModel {
         this.head.rotation.x = -0.2 * e;
         break;
       }
+      case POSE.THROW:
+        SL.rotation.set(-2.75, 0, -0.42);
+        SR.rotation.set(-2.75, 0, 0.42);
+        SL.userData.elbow.rotation.x = SR.userData.elbow.rotation.x = -1.65;
+        body.rotation.x = -0.22;
+        this.head.rotation.x = -0.15;
+        break;
       default:
         break;
     }
 
-    if (s.kickT > 0) {
+    if (s.kickT > 0 && s.kickKind === KICK.BICYCLE) {
+      const [dur, , , contact] = KICK_ANIM[KICK.BICYCLE];
+      const t = Math.min(1, s.kickT / dur);
+      const wind = t < contact ? t / contact : 1;
+      const follow = t < contact ? 0 : (t - contact) / (1 - contact);
+      const e = t < contact ? wind : Math.max(0.2, 1 - follow * 0.75);
+      body.rotation.x = 1.28 * e;
+      body.position.y = 0.38 * e;
+      R.rotation.x = -0.35 - 2.35 * (t < contact ? wind : 1 - follow * 0.45);
+      R.userData.knee.rotation.x = t < contact ? 0.15 * wind : 0.7 * (1 - follow);
+      L.rotation.x = 0.55 * e;
+      L.userData.knee.rotation.x = 1.15 * e;
+      SL.rotation.set(-0.25 - 0.35 * e, 0, -1.3 * e);
+      SR.rotation.set(-1.55 * e, 0, 0.85 * e);
+      SL.userData.elbow.rotation.x = -0.35;
+      SR.userData.elbow.rotation.x = -0.55;
+      this.head.rotation.x = 0.32 * e;
+    } else if (s.kickT > 0 && s.kickKind === KICK.THROW) {
+      const [dur, , , contact] = KICK_ANIM[KICK.THROW];
+      const t = Math.min(1, s.kickT / dur);
+      const wind = t < contact ? t / contact : 1;
+      const follow = t < contact ? 0 : (t - contact) / (1 - contact);
+      const armX = -2.85 * (1 - follow * 0.85) + 0.15 * follow;
+      const z = 0.38 * (1 - follow * 0.5);
+      SL.rotation.set(armX, 0, -z);
+      SR.rotation.set(armX, 0, z);
+      const el = -1.7 * (1 - follow) - 0.15;
+      SL.userData.elbow.rotation.x = SR.userData.elbow.rotation.x = el;
+      body.rotation.x = -0.28 * (1 - follow) + 0.55 * follow;
+      this.head.rotation.x = -0.2 * (1 - follow) + 0.25 * follow;
+    } else if (s.kickT > 0) {
       const [dur, backA, fwdA, contact] = KICK_ANIM[s.kickKind];
       const t = s.kickT / dur;
       const back = t < contact ? t / contact : 0;
