@@ -13,22 +13,23 @@ import { Commentary } from './commentary.js';
 import { Game } from './game.js';
 import { statLine, ratingTier } from './ratings.js';
 import { formMarkup, formView } from './form.js';
-import { appearanceFor } from './appearance.js';
+import { lookFor, HAIR_STYLES, HAIR_COLOUR_NAMES } from './appearance.js';
+import { CELEBRATIONS } from './celebrations.js';
 import {
   withTraining, trainedList, trainedRecord, forgetTrained, trainerHost, setTrainerHost, sendPayload, sendUrl,
-  syncUrl, pingTrainer, consumeSyncFromLocation, deltaLabel,
+  syncUrl, pingTrainer, consumeSyncFromLocation, deltaLabel, asciiName,
 } from './trainer.js';
 import { Input, CONTROLS, P1_COLOR, P2_COLOR } from './input.js';
 import {
-  TEAMS, NATIONS, DREAM, STAR_POOL, SLOT_LABELS, teamRating, resolveKits, shotTraits,
-  setDreamPlayers, autoDreamNames, emptyDraft, naturalSlots, starMatches, draftedCount,
+  TEAMS, TOWNS, AGE_BANDS, POSITIONS, SLOT_LABELS, PRO_CLUB, PRO_CALLUP_OVR, CELEBRATION_IDS,
+  teamRating, resolveKits, kitsClash, shotTraits, findTown,
 } from './teams.js';
 import { DIFFICULTY, resolveDifficulty } from './constants.js';
 import {
-  loadCup, saveCup, clearCup, createCup, wcNations, findNation,
-  nextUserMatch, finishUserMatch, userStatus, groupTables, describePhase,
-  groupsComplete, matchLabel, bracketRounds, roundName, GROUPS,
-} from './worldcup.js';
+  loadCareer, saveCareer, clearCareer, createCareer, currentBand, userClub, opponentClub, nextFixture,
+  seasonOver, finishMatch, endSeason, leagueTable, teamName, describeStage, findPlayer, updatePlayer,
+  swapPlayers, updateKit, renameClub, defaultKits, callUpCandidates, pointCost, LEAGUE_SIZE,
+} from './career.js';
 
 const $ = (id) => document.getElementById(id);
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
@@ -329,6 +330,7 @@ const hud = {
     badgeStyle($('ft-bb'), b.club);
     $('ft-result').textContent = res;
     renderRatings([a, b], ratings);
+    lastMatchRatings = ratings;
     setTimeout(() => {
       syncFtButtons();
       $('fulltime').classList.remove('hidden');
@@ -435,7 +437,7 @@ function setMode(mode, persist = true) {
   sel.mode = mode;
   $('mode-ai')?.classList.toggle('on', mode === '1p');
   $('mode-2p')?.classList.toggle('on', twoPlayer());
-  $('mode-wc')?.classList.remove('on');
+  $('mode-career')?.classList.remove('on');
   $('btn-coop')?.classList.toggle('hidden', !twoPlayer());
   if ($('btn-coop')) {
     $('btn-coop').textContent = sel.mode === 'coop'
@@ -495,46 +497,41 @@ function updateKickoffBtn() {
   btn.textContent = ready ? 'KICK OFF' : 'Waiting for P1 & P2…';
 }
 
-function pickerTeams(side) {
-  return [DREAM[side], ...TEAMS];
+// Friendlies: your career team (if you have one) plus every local club at U14 strength.
+let friendlyCareerClub = null;
+function refreshFriendlyClubs() {
+  const c = loadCareer();
+  friendlyCareerClub = c ? userClub(c) : null;
+  for (const side of ['user', 'ai']) {
+    if (sel[side]?.kind === 'career') sel[side] = friendlyCareerClub || TEAMS[side === 'user' ? 0 : 2];
+  }
+}
+
+function pickerTeams() {
+  return friendlyCareerClub ? [friendlyCareerClub, ...TEAMS] : TEAMS;
 }
 
 function clubCard(club, side) {
   const el = document.createElement('div');
   el.className = 'club';
-  const tag = club.kind === 'dream' ? '<span class="ckind dream">DREAM</span>'
-    : club.kind === 'prime' ? '<span class="ckind prime">PRIME</span>'
-    : club.kind === 'nation' ? '<span class="ckind">NATION</span>' : '';
-  const rate = club.kind === 'dream' && draftedCount(club) < 11
-    ? (draftedCount(club) ? `${draftedCount(club)}/11` : 'DRAFT')
-    : `OVR ${teamRating(club)}`;
+  const tag = club.kind === 'career' ? '<span class="ckind dream">YOURS</span>' : '';
+  const rate = `OVR ${teamRating({ players: club.players.map(withTraining) })}`;
   el.innerHTML = `<span class="badge"></span><span class="cname">${club.name}</span>${tag}<span class="crate">${rate}</span>`;
   badgeStyle(el.querySelector('.badge'), club);
   el.onclick = () => {
-    const again = sel[side] === club && club.kind === 'dream';
     sel[side] = club;
     renderMenu();
-    if (again) openDream(side);
   };
   return el;
 }
 
-function clubInfo(club, side) {
+function clubInfo(club) {
   const k = club.home;
-  const top = club.kind === 'dream'
-    ? SLOT_LABELS.map((lab, i) => {
-      const name = club.draft?.[i] || '';
-      const pl = name && withTraining(STAR_POOL.find((s) => s.name === name));
-      return { num: i + 1, name: name || `Draft ${lab}`, ovr: pl?.ovr ?? '—', trained: pl?.trained };
-    })
-    : club.players.map(withTraining).sort((a, b) => b.ovr - a.ovr).slice(0, 6);
-  const edit = club.kind === 'dream'
-    ? `<button type="button" class="ghost dream-edit" data-side="${side}">Draft players</button>`
-    : '';
-  return `<div class="ci-head"><span class="badge" data-club="${club.id}"></span><div><div class="ci-title">${club.name}</div>
-    <div>Team OVR <b>${teamRating(club)}</b> · Kit <span class="kit"><i style="background:${hex(k.shirt)}"></i><i style="background:${hex(k.shorts)}"></i><i style="background:${hex(k.socks)}"></i></span>
+  const top = club.players.map(withTraining).sort((a, b) => b.ovr - a.ovr).slice(0, 6);
+  return `<div class="ci-head"><span class="badge" data-club="${club.id}"></span><div><div class="ci-title">${esc(club.name)}</div>
+    <div>Team OVR <b>${teamRating({ players: club.players.map(withTraining) })}</b> · Kit <span class="kit"><i style="background:${hex(k.shirt)}"></i><i style="background:${hex(k.shorts)}"></i><i style="background:${hex(k.socks)}"></i></span>
     GK <span class="kit"><i style="background:${hex(club.gk.shirt)}"></i></span></div></div></div>
-    <div class="stars">${top.map((p) => `<div><span>#${p.num} ${p.name}${trainedStar(p)}</span><b>${p.ovr}</b></div>`).join('')}</div>${edit}`;
+    <div class="stars">${top.map((p) => `<div><span>#${p.num} ${esc(p.name)}${trainedStar(p)}</span><b>${p.ovr}</b></div>`).join('')}</div>`;
 }
 
 function renderMenu() {
@@ -543,19 +540,13 @@ function renderMenu() {
     grid.innerHTML = '';
     for (const c of pickerTeams(side)) {
       const card = clubCard(c, side);
-      if (c.kind === 'nation') card.classList.add('nation');
-      if (c.kind === 'prime') card.classList.add('prime');
-      if (c.kind === 'dream') card.classList.add('dream');
+      if (c.kind === 'career') card.classList.add('dream');
       if (sel[side] === c) card.classList.add('on');
       grid.appendChild(card);
     }
     const info = $(`info-${side}`);
-    info.innerHTML = clubInfo(sel[side], side);
+    info.innerHTML = clubInfo(sel[side]);
     badgeStyle(info.querySelector('.badge'), sel[side]);
-    info.querySelector('.dream-edit')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openDream(side);
-    });
   }
   updateJoinUI();
   if (typeof applyMenuFocus === 'function') applyMenuFocus();
@@ -597,158 +588,21 @@ fillControls();
 let mode = 'menu';
 let paused = false;
 let helpOpen = false;
-let dreamOpen = false;
 let trainerOpen = false;
 let quitOpen = false;
 let pausedBeforeQuit = false;
 let reconnecting = false;
 let subsOpen = false;
-let wcPickOpen = false;
-let wcHubOpen = false;
-let inWorldCupMatch = false;
-let wcMatchId = null;
-let wcSel = NATIONS[0];
-const wcNav = { zone: 'grid', idx: 0, opt: 1 };
-const wcHubNav = { idx: 0 };
+let crNewOpen = false;
+let crHubOpen = false;
+let crPlayerOpen = false;
+let crKitOpen = false;
+let inCareerMatch = false;
+let crFixtureId = null;
+let crTown = TOWNS[0];
+const crNav = { zone: 'grid', idx: 0, opt: 1 };
+const crHubNav = { idx: 0 };
 const subUI = { team: 0, col: 0, out: 0, inn: 0, from: '' };
-
-const PITCH_XY = [
-  [50, 88], [86, 68], [64, 70], [36, 70], [14, 68],
-  [78, 42], [50, 46], [22, 42], [82, 18], [50, 16], [18, 18],
-];
-const dreamUI = { side: 'user', slot: 0, query: '', era: 'all', pos: 'all', names: [] };
-
-function openDream(side) {
-  dreamOpen = true;
-  dreamUI.side = side;
-  dreamUI.slot = 0;
-  dreamUI.query = '';
-  dreamUI.era = 'all';
-  dreamUI.pos = 'all';
-  dreamUI.names = [...(DREAM[side].draft || emptyDraft())];
-  dreamUI.slot = Math.max(0, dreamUI.names.findIndex((n) => !n));
-  const search = $('dream-search');
-  if (search) search.value = '';
-  for (const root of ['dream-era', 'dream-pos']) {
-    $(root)?.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === 'all'));
-  }
-  $('dream-sub').textContent = side === 'user'
-    ? 'Draft anyone — Zlatan, Pelé, Messi, whoever. They slot into position.'
-    : 'Draft the opponent XI from past and present stars.';
-  $('dream').classList.remove('hidden');
-  renderDream();
-  setOverlayFocus('dream', 2);
-  search?.focus();
-}
-
-function closeDream() {
-  if (!dreamOpen) return;
-  setDreamPlayers(DREAM[dreamUI.side], dreamUI.names);
-  sel[dreamUI.side] = DREAM[dreamUI.side];
-  dreamOpen = false;
-  $('dream').classList.add('hidden');
-  renderMenu();
-}
-
-function filteredStars() {
-  const taken = new Set(dreamUI.names.filter(Boolean));
-  return STAR_POOL.filter((pl) => {
-    if (dreamUI.era !== 'all' && pl.era !== 'both' && pl.era !== dreamUI.era) return false;
-    if (dreamUI.pos !== 'all') {
-      const role = { GK: 'GK', RB: 'DEF', CB: 'DEF', LB: 'DEF', CM: 'MID', CDM: 'MID', RW: 'FWD', ST: 'FWD', LW: 'FWD' }[pl.pos];
-      if (role !== dreamUI.pos) return false;
-    }
-    return starMatches(pl, dreamUI.query);
-  }).map((pl) => ({ pl, taken: taken.has(pl.name) }));
-}
-
-function draftPlayer(name) {
-  const pl = STAR_POOL.find((s) => s.name === name);
-  if (!pl) return;
-  const have = dreamUI.names.indexOf(name);
-  if (have >= 0) {
-    dreamUI.slot = have;
-    renderDream();
-    return;
-  }
-  const prefs = naturalSlots(pl.pos);
-  const selectedEmpty = !dreamUI.names[dreamUI.slot];
-  const selectedFits = prefs.includes(dreamUI.slot);
-  let slot = selectedEmpty && selectedFits
-    ? dreamUI.slot
-    : prefs.find((i) => !dreamUI.names[i]);
-  if (slot == null) slot = dreamUI.names.findIndex((n) => !n);
-  if (slot < 0) slot = selectedEmpty ? dreamUI.slot : prefs[0];
-  dreamUI.names[slot] = name;
-  const next = dreamUI.names.findIndex((n) => !n);
-  dreamUI.slot = next >= 0 ? next : slot;
-  renderDream();
-}
-
-function renderDream() {
-  const pitch = $('dream-pitch');
-  const list = $('dream-list');
-  if (!pitch || !list) return;
-  const squad = dreamUI.names.map((name) => (name ? withTraining(STAR_POOL.find((pl) => pl.name === name)) : null));
-  const filled = dreamUI.names.filter(Boolean).length;
-  const ovr = filled ? Math.round(squad.reduce((a, pl) => a + (pl?.ovr || 0), 0) / filled) : 0;
-  $('dream-ovr').textContent = filled < 11 ? `${filled}/11` : `OVR ${ovr}`;
-  pitch.innerHTML = '';
-  SLOT_LABELS.forEach((label, i) => {
-    const drafted = Boolean(dreamUI.names[i]);
-    const pl = drafted ? squad[i] : null;
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `dslot${pl ? '' : ' empty'}${dreamUI.slot === i ? ' on' : ''}`;
-    b.style.left = `${PITCH_XY[i][0]}%`;
-    b.style.top = `${PITCH_XY[i][1]}%`;
-    b.innerHTML = `<span class="dpos">${label}</span><span class="dname">${pl ? pl.back : 'Draft'}</span><span class="dovr">${pl ? pl.ovr : '—'}</span>`;
-    b.onclick = () => {
-      if (dreamUI.slot === i && dreamUI.names[i]) dreamUI.names[i] = '';
-      else dreamUI.slot = i;
-      renderDream();
-    };
-    pitch.appendChild(b);
-  });
-  const rows = filteredStars();
-  list.innerHTML = '';
-  for (const { pl: raw, taken } of rows) {
-    const pl = withTraining(raw);
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `drow${taken ? ' taken' : ''}${dreamUI.names[dreamUI.slot] === pl.name ? ' on' : ''}`;
-    const era = pl.era === 'prime' ? 'PRIME' : pl.era === 'now' ? 'NOW' : 'ALL';
-    b.innerHTML = `<span class="dwho">${pl.name}${trainedStar(pl)}</span><span class="dmeta">${pl.pos} · ${era}</span><span class="dstat">${pl.ovr}</span>`;
-    b.onclick = () => draftPlayer(pl.name);
-    list.appendChild(b);
-  }
-}
-
-function bindDreamFilters(id, key) {
-  $(id)?.querySelectorAll('button').forEach((b) => {
-    b.onclick = () => {
-      dreamUI[key] = b.dataset.v;
-      $(id).querySelectorAll('button').forEach((o) => o.classList.toggle('on', o === b));
-      renderDream();
-    };
-  });
-}
-bindDreamFilters('dream-era', 'era');
-bindDreamFilters('dream-pos', 'pos');
-$('dream-search')?.addEventListener('input', (e) => {
-  dreamUI.query = e.target.value;
-  renderDream();
-});
-$('btn-dream-best')?.addEventListener('click', () => {
-  dreamUI.names = autoDreamNames();
-  renderDream();
-});
-$('btn-dream-reset')?.addEventListener('click', () => {
-  dreamUI.names = emptyDraft();
-  dreamUI.slot = 0;
-  renderDream();
-});
-$('btn-dream-done')?.addEventListener('click', () => closeDream());
 
 // ------------------------------------------------------------------ trainer
 
@@ -781,7 +635,10 @@ function closeTrainer() {
   setTrainerHost($('trainer-host').value);
   trainerOpen = false;
   $('trainer').classList.add('hidden');
+  refreshFriendlyClubs();
   renderMenu();
+  if (crHubOpen) renderCareerHub();
+  else applyMenuFocus();
 }
 
 async function checkTrainer() {
@@ -805,16 +662,11 @@ async function checkTrainer() {
   }
 }
 
-function teamFor(pl) {
-  const want = pl.era === 'prime' ? 'prime' : null;
-  return TEAMS.find((t) => t.short === pl.club && (!want || t.kind === want))
-    || TEAMS.find((t) => t.short === pl.club)
-    || null;
-}
-
 function sendToTrainer(pl) {
   setTrainerHost($('trainer-host').value);
-  const payload = sendPayload(pl, { team: teamFor(pl), look: appearanceFor(pl.name), ret: gameUrl() });
+  const state = loadCareer();
+  if (!state) return;
+  const payload = sendPayload(pl, { team: userClub(state), look: lookFor(pl), ret: gameUrl() });
   location.href = sendUrl(payload);
 }
 
@@ -826,19 +678,22 @@ function syncFromTrainer() {
 function renderTrainer() {
   const list = $('trainer-list');
   list.innerHTML = '';
-  const rows = STAR_POOL.filter((pl) => starMatches(pl, trainerUI.query)).slice(0, 80);
+  const state = loadCareer();
+  const q = asciiName(trainerUI.query).toLowerCase();
+  const rows = state ? state.squad.filter((pl) => !q || asciiName(pl.name).toLowerCase().includes(q)) : [];
   for (const raw of rows) {
     const pl = withTraining(raw);
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'drow';
     b.innerHTML = `<span class="dwho">${escHtml(pl.name)}${trainedStar(pl)}</span>`
-      + `<span class="dmeta">${escHtml(pl.pos)} · ${escHtml(pl.club || '')}</span>`
+      + `<span class="dmeta">#${pl.num} · ${escHtml(pl.pos)}</span>`
       + `<span class="dstat">${pl.ovr}</span><span class="dsend">SEND</span>`;
     b.onclick = () => sendToTrainer(raw);
     list.appendChild(b);
   }
-  if (!rows.length) list.innerHTML = '<p class="tip">No players match that search.</p>';
+  if (!state) list.innerHTML = '<p class="tip">Start a Career first. Then you can send your players to the trainer.</p>';
+  else if (!rows.length) list.innerHTML = '<p class="tip">No players match that search.</p>';
 
   const trained = $('trainer-trained');
   trained.innerHTML = '';
@@ -848,13 +703,14 @@ function renderTrainer() {
     const when = rec.at ? new Date(rec.at).toLocaleDateString() : '';
     const coach = rec.coach ? `Coach ${escHtml(rec.coach)} · ` : '';
     const steps = rec.log?.steps ? ` · ${rec.log.steps.toLocaleString()} steps` : '';
-    row.innerHTML = `<span class="dwho">${escHtml(rec.name)}<span class="trained-star">★</span></span>`
+    const current = state && findPlayer(state, rec.id);
+    row.innerHTML = `<span class="dwho">${escHtml(current?.name || rec.name || rec.id)}<span class="trained-star">★</span></span>`
       + `<span class="dmeta">${coach}${when}</span>`
       + '<button type="button" class="dforget">Forget</button>'
       + `<span class="dgain">${escHtml(deltaLabel(rec.train || []))} · OVR +${rec.train?.[4] ?? 0}${steps}</span>`;
     row.querySelector('.dforget').onclick = () => {
-      if (!window.confirm(`Remove ${rec.name}'s training from this game? The trainer keeps its copy.`)) return;
-      forgetTrained(rec.name);
+      if (!window.confirm(`Remove ${current?.name || rec.name}'s training from this game? The trainer keeps its copy.`)) return;
+      forgetTrained(rec.id);
       renderTrainer();
     };
     trained.appendChild(row);
@@ -873,7 +729,7 @@ function showSyncResult(res) {
     el.classList.add('err');
   } else {
     const gained = res.gained.slice(0, 4).some((v) => v > 0) ? deltaLabel(res.gained) : 'No new gains since last sync';
-    const total = trainedRecord(res.name)?.train?.[4] ?? 0;
+    const total = trainedRecord(res.id)?.train?.[4] ?? 0;
     el.innerHTML = `${escHtml(res.name)} is back from training!`
       + `<span class="tt-sub">${escHtml(gained)} · OVR +${total} overall</span>`;
   }
@@ -882,6 +738,7 @@ function showSyncResult(res) {
   el.onclick = hide;
   clearTimeout(showSyncResult.t);
   showSyncResult.t = setTimeout(hide, 7000);
+  refreshFriendlyClubs();
   renderMenu();
 }
 
@@ -902,11 +759,11 @@ function toggleHelp(force) {
 }
 
 function startMatch(opts = {}) {
-  const worldCup = !!opts.worldCup;
-  if (!worldCup && twoPlayer() && !input.bothJoined()) return;
+  const career = !!opts.career;
+  if (!career && twoPlayer() && !input.bothJoined()) return;
   sfx.init();
   const kits = resolveKits(sel.user, sel.ai);
-  const matchMode = worldCup ? '1p' : sel.mode;
+  const matchMode = career ? '1p' : sel.mode;
   game.setupMatch({
     userClub: sel.user, aiClub: sel.ai, kits, difficulty: sel.diff, minutes: sel.len,
     matchMode, pads: input.slots.map((s) => s.padIndex),
@@ -919,12 +776,14 @@ function startMatch(opts = {}) {
   $('sb-clock').style.background = hex(kits.user.shirt === 0xf6f6f6 ? 0x1a2340 : kits.user.shirt);
   hud.setScore(0, 0);
   const d = DIFFICULTY[sel.diff];
-  $('sb-diff').textContent = worldCup ? `WC · ${d.short}` : sel.mode === 'versus' ? '2P' : sel.mode === 'coop' ? 'CO-OP' : d.short;
-  $('pause-diff').textContent = worldCup ? `World Cup · ${d.label}` : sel.mode === 'versus' ? 'Two Player' : sel.mode === 'coop' ? `Co-op · ${d.label}` : d.label;
+  const bandLabel = career ? (sel.user.band || '').toUpperCase() : '';
+  $('sb-diff').textContent = career ? `${bandLabel} · ${d.short}` : sel.mode === 'versus' ? '2P' : sel.mode === 'coop' ? 'CO-OP' : d.short;
+  $('pause-diff').textContent = career ? `Career ${bandLabel} · ${d.label}` : sel.mode === 'versus' ? 'Two Player' : sel.mode === 'coop' ? `Co-op · ${d.label}` : d.label;
   $('playercard2')?.classList.toggle('hidden', matchMode !== 'versus' && matchMode !== 'coop');
   $('menu').classList.add('hidden');
-  $('wc-pick')?.classList.add('hidden');
-  $('wc-hub')?.classList.add('hidden');
+  hideCareerOverlays();
+  $('trainer')?.classList.add('hidden');
+  trainerOpen = false;
   $('fulltime').classList.add('hidden');
   $('quit-confirm').classList.add('hidden');
   $('pause').classList.add('hidden');
@@ -940,9 +799,7 @@ function startMatch(opts = {}) {
   lastCard = [null, null];
   subsOpen = false;
   helpOpen = false;
-  wcPickOpen = false;
-  wcHubOpen = false;
-  if (!worldCup) inWorldCupMatch = false;
+  if (!career) inCareerMatch = false;
   mode = 'match';
   paused = false;
   quitOpen = false;
@@ -989,11 +846,10 @@ function leaveMatch() {
 
 function toMenu() {
   leaveMatch();
-  inWorldCupMatch = false;
-  wcPickOpen = false;
-  wcHubOpen = false;
-  $('wc-pick')?.classList.add('hidden');
-  $('wc-hub')?.classList.add('hidden');
+  inCareerMatch = false;
+  hideCareerOverlays();
+  refreshFriendlyClubs();
+  renderMenu();
   $('menu').classList.remove('hidden');
   if (twoPlayer()) input.resetJoin();
   setMode(sel.mode, false);
@@ -1002,292 +858,537 @@ function toMenu() {
 }
 
 function syncFtButtons() {
-  const cup = inWorldCupMatch;
-  $('btn-rematch')?.classList.toggle('hidden', cup);
-  $('btn-menu')?.classList.toggle('hidden', cup);
-  $('btn-ft-continue')?.classList.toggle('hidden', !cup);
+  const career = inCareerMatch;
+  $('btn-rematch')?.classList.toggle('hidden', career);
+  $('btn-menu')?.classList.toggle('hidden', career);
+  $('btn-ft-continue')?.classList.toggle('hidden', !career);
 }
 
-function openWorldCup() {
-  if (loadCup()) showWcHub();
-  else showWcPick();
+// ------------------------------------------------------------------ career
+
+const SKIN_SWATCHES = ['#f7d9c8', '#f0c8ae', '#dcab88', '#bd8662', '#8e5b3c', '#5c3822', '#3b2214'];
+const HAIR_LABELS = {
+  buzz: 'Buzz cut', crop: 'Short crop', slick: 'Slicked back', curly: 'Curly', afro: 'Afro',
+  dreads: 'Dreads', long: 'Long', bun: 'Man bun', bald: 'Shaved',
+};
+const STAT_KEYS = ['pac', 'sho', 'pas', 'def'];
+const STAT_LABEL = { pac: 'PAC', sho: 'SHO', pas: 'PAS', def: 'DEF' };
+
+let careerReport = null;
+let seasonReport = null;
+let lastMatchRatings = [];
+const editUI = { id: null, look: null };
+let kitDraft = null;
+
+function townBadge(t) {
+  return { short: t.short, badge: [hex(t.home.shirt), hex(t.home.trim), hex(t.home.shorts)] };
 }
 
-function showWcPick() {
-  wcPickOpen = true;
-  wcHubOpen = false;
-  inWorldCupMatch = false;
-  const list = wcNations();
-  if (!list.includes(wcSel)) wcSel = list[0];
-  wcNav.zone = 'grid';
-  wcNav.idx = Math.max(0, list.indexOf(wcSel));
-  wcNav.opt = 1;
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+function careerOverlayOpen() {
+  return crNewOpen || crHubOpen || crPlayerOpen || crKitOpen;
+}
+
+function hideCareerOverlays() {
+  for (const id of ['career-new', 'career-hub', 'career-player', 'career-kit']) $(id)?.classList.add('hidden');
+  crNewOpen = false;
+  crHubOpen = false;
+  crPlayerOpen = false;
+  crKitOpen = false;
+}
+
+function openCareer() {
+  if (loadCareer()) showCareerHub();
+  else showCareerNew();
+}
+
+function showCareerNew() {
+  hideCareerOverlays();
+  crNewOpen = true;
+  inCareerMatch = false;
+  crNav.zone = 'grid';
+  crNav.idx = Math.max(0, TOWNS.indexOf(crTown));
+  crNav.opt = 1;
   $('menu').classList.add('hidden');
-  $('wc-hub')?.classList.add('hidden');
-  $('wc-pick')?.classList.remove('hidden');
-  renderWcPick();
+  $('career-new').classList.remove('hidden');
+  $('career-nick').value = crTown.nickname;
+  renderCareerNew();
 }
 
-function showWcHub() {
-  wcHubOpen = true;
-  wcPickOpen = false;
-  inWorldCupMatch = false;
-  $('menu').classList.add('hidden');
-  $('wc-pick')?.classList.add('hidden');
-  $('wc-hub')?.classList.remove('hidden');
-  renderWcHub();
-}
-
-function toWcHub() {
-  leaveMatch();
-  inWorldCupMatch = false;
-  showWcHub();
-}
-
-function startNewCup() {
-  const cup = createCup(wcSel.id);
-  if (!cup) return;
-  saveCup(cup);
-  showWcHub();
-}
-
-function startWcMatch() {
-  const cup = loadCup();
-  const fx = nextUserMatch(cup);
-  if (!cup || !fx) return;
-  const oppId = fx.home === cup.userId ? fx.away : fx.home;
-  const user = findNation(cup.userId);
-  const opp = findNation(oppId);
-  if (!user || !opp) return;
-  sel.user = user;
-  sel.ai = opp;
-  inWorldCupMatch = true;
-  wcMatchId = fx.id;
-  startMatch({ worldCup: true, allowDraw: !!fx.group });
-  hud.say(`World Cup · ${describePhase(cup)} · ${user.short} vs ${opp.short}`);
-}
-
-function continueWorldCup() {
-  const cup = loadCup();
-  const fx = cup && (cup.fixtures.find((f) => f.id === wcMatchId) || cup.knockouts.find((k) => k.id === wcMatchId));
-  if (!cup || !fx || !game.teams?.length) {
-    toWcHub();
-    return;
-  }
-  const [userTeam, aiTeam] = game.teams;
-  const pens = game.pens && game.pens.scored[0] !== game.pens.scored[1]
-    ? [game.pens.scored[0], game.pens.scored[1]]
-    : null;
-  let homeG = userTeam.score;
-  let awayG = aiTeam.score;
-  let pensArr = pens;
-  if (fx.home !== cup.userId) {
-    homeG = aiTeam.score;
-    awayG = userTeam.score;
-    pensArr = pens ? [pens[1], pens[0]] : null;
-  }
-  finishUserMatch(cup, fx.id, homeG, awayG, pensArr);
-  toWcHub();
-}
-
-function renderWcPick() {
-  const list = wcNations();
-  const grid = $('wc-grid');
-  if (!grid) return;
+function renderCareerNew() {
+  const grid = $('career-towns');
   grid.innerHTML = '';
-  list.forEach((n, i) => {
+  TOWNS.forEach((t, i) => {
     const el = document.createElement('div');
-    el.className = `club nation${n === wcSel ? ' on' : ''}`;
-    el.innerHTML = `<span class="badge"></span><span class="cname">${n.name}</span><span class="crate">OVR ${teamRating(n)}</span>`;
-    badgeStyle(el.querySelector('.badge'), n);
+    el.className = `club${t === crTown ? ' on' : ''}`;
+    el.innerHTML = `<span class="badge"></span><span class="cname">${esc(t.town)}</span><span class="crate">${esc(t.nickname)}</span>`;
+    badgeStyle(el.querySelector('.badge'), townBadge(t));
     el.onclick = () => {
-      wcSel = n;
-      wcNav.idx = i;
-      renderWcPick();
+      const nick = $('career-nick');
+      if (!nick.value.trim() || nick.value === crTown.nickname) nick.value = t.nickname;
+      crTown = t;
+      crNav.idx = i;
+      renderCareerNew();
     };
     grid.appendChild(el);
   });
-  const info = $('wc-info');
-  if (info) {
-    info.innerHTML = clubInfo(wcSel, 'wc');
-    badgeStyle(info.querySelector('.badge'), wcSel);
-  }
-  paintWcFocus();
+  $('career-town-label').textContent = crTown.town;
+  paintCareerFocus();
 }
 
-function wcHubButtons() {
-  return ['btn-wc-play', 'btn-wc-new', 'btn-wc-menu', 'btn-wc-abandon'].filter((id) => {
-    const el = $(id);
-    return el && !el.classList.contains('hidden');
-  });
+function startNewCareer() {
+  const state = createCareer({ townId: crTown.id, nickname: $('career-nick').value });
+  saveCareer(state);
+  careerReport = null;
+  seasonReport = null;
+  showCareerHub();
 }
 
-function paintWcFocus() {
-  document.querySelectorAll('#wc-pick .pad-focus, #wc-hub .pad-focus').forEach((el) => el.classList.remove('pad-focus'));
-  if (wcPickOpen) {
-    if (wcNav.zone === 'grid') $('wc-grid')?.children[wcNav.idx]?.classList.add('pad-focus');
-    else $(wcNav.opt ? 'btn-wc-start' : 'btn-wc-back')?.classList.add('pad-focus');
+function showCareerHub() {
+  hideCareerOverlays();
+  crHubOpen = true;
+  inCareerMatch = false;
+  $('menu').classList.add('hidden');
+  $('career-hub').classList.remove('hidden');
+  renderCareerHub();
+}
+
+function toCareerHub() {
+  leaveMatch();
+  inCareerMatch = false;
+  showCareerHub();
+}
+
+function startCareerMatch() {
+  const state = loadCareer();
+  const fx = state && nextFixture(state);
+  if (!fx) return;
+  const oppId = fx.home === 'career' ? fx.away : fx.home;
+  const opp = opponentClub(state, oppId);
+  const mine = userClub(state);
+  if (!opp) return;
+  // Away days: wear the away kit unless it clashes with the home side.
+  if (fx.away === 'career' && !kitsClash(mine.away, opp.home)) mine.home = mine.away;
+  sel.user = mine;
+  sel.ai = opp;
+  inCareerMatch = true;
+  crFixtureId = fx.id;
+  careerReport = null;
+  seasonReport = null;
+  startMatch({ career: true, allowDraw: true });
+  hud.say(`${describeStage(state)} · ${mine.short} vs ${opp.short}`);
+}
+
+function continueCareer() {
+  const state = loadCareer();
+  if (!state || !game.teams?.length) {
+    toCareerHub();
     return;
   }
-  if (wcHubOpen) {
-    const ids = wcHubButtons();
-    if (!ids.length) return;
-    wcHubNav.idx = ((wcHubNav.idx % ids.length) + ids.length) % ids.length;
-    $(ids[wcHubNav.idx])?.classList.add('pad-focus');
-  }
+  const [userTeam, aiTeam] = game.teams;
+  const lines = (lastMatchRatings || []).filter((s) => s.teamIdx === 0);
+  const fx = state.league.fixtures.find((f) => f.id === crFixtureId);
+  const oppId = fx ? (fx.home === 'career' ? fx.away : fx.home) : '';
+  careerReport = finishMatch(state, crFixtureId, userTeam.score, aiTeam.score, lines);
+  if (careerReport) careerReport.opp = teamName(state, oppId);
+  saveCareer(state);
+  toCareerHub();
 }
 
-function handleWcPickPad(m) {
-  const list = wcNations();
-  const grid = $('wc-grid');
-  const cols = grid ? gridCols(grid) : 4;
-  if (m.navX || m.navY) {
-    const nx = Math.abs(m.navX) >= Math.abs(m.navY) ? m.navX : 0;
-    const ny = nx ? 0 : m.navY;
-    if (wcNav.zone === 'grid') {
-      const next = wcNav.idx + nx + ny * cols;
-      if (next >= list.length) {
-        wcNav.zone = 'opts';
-        wcNav.opt = 1;
-      } else if (next >= 0) {
-        wcNav.idx = next;
-        wcSel = list[wcNav.idx];
-        renderWcPick();
-        return;
-      }
-    } else if (ny < 0) wcNav.zone = 'grid';
-    else if (nx) wcNav.opt = nx > 0 ? 1 : 0;
-    paintWcFocus();
+function finishCareerSeason() {
+  const state = loadCareer();
+  const res = state && endSeason(state);
+  if (!res) return;
+  saveCareer(state);
+  seasonReport = res;
+  careerReport = null;
+  renderCareerHub();
+}
+
+function careerPlayerName(state, id) {
+  return findPlayer(state, id)?.name || 'A player';
+}
+
+function gainText(gained) {
+  return STAT_KEYS.filter((k) => gained?.[k] > 0).map((k) => `${STAT_LABEL[k]} +${gained[k]}`).join(' · ');
+}
+
+function renderCareerReport(state) {
+  const el = $('career-report');
+  if (careerReport) {
+    const r = careerReport;
+    const word = r.result > 0 ? 'Won' : r.result < 0 ? 'Lost' : 'Drew';
+    const rows = r.players.slice(0, 6).map((p) => {
+      const g = gainText(p.gained);
+      return `<div class="cr-row"><span>${esc(p.name)}</span><span class="cr-rate">${(p.rating ?? 6).toFixed(1)}</span>`
+        + `<span class="cr-xp">+${p.xp} XP</span><span class="cr-gain">${g ? esc(g) : ''}</span></div>`;
+    }).join('');
+    const scouts = r.scouts?.length
+      ? `<p class="cr-scout">Scouts from ${esc(PRO_CLUB.name)} are watching ${esc(r.scouts.map((id) => careerPlayerName(state, id)).join(', '))}.</p>`
+      : '';
+    el.innerHTML = `<h3>${word} ${r.userGoals}–${r.oppGoals} vs ${esc(r.opp || 'opponents')}</h3>${rows}${scouts}`;
+    el.classList.remove('hidden');
+    return;
   }
-  if (m.confirm) {
-    input.latchMenu();
-    if (wcNav.zone === 'opts') $(wcNav.opt ? 'btn-wc-start' : 'btn-wc-back')?.click();
-    else {
-      wcNav.zone = 'opts';
-      wcNav.opt = 1;
-      paintWcFocus();
+  if (seasonReport) {
+    const r = seasonReport;
+    const s = r.summary;
+    const avg = (key) => Math.round(r.growth.reduce((a, g) => a + g[key], 0) / Math.max(1, r.growth.length));
+    let extra = '';
+    if (r.finished) {
+      extra = `<p class="cr-big">${esc(r.calledUp.map((id) => careerPlayerName(state, id)).join(' and '))} `
+        + `${r.calledUp.length > 1 ? 'have' : 'has'} been called up to ${esc(r.pro.name)}!</p>`;
+    } else if (r.academyInvite) {
+      extra = `<p class="cr-big">The ${esc(PRO_CLUB.name)} Academy has invited your team! Next stop: ${esc(r.next.label)} ${esc(r.next.tier)}.</p>`;
+    } else if (r.next) {
+      extra = `<p>Everyone moves up to ${esc(r.next.label)} ${esc(r.next.tier)}.</p>`;
     }
-  }
-  if (m.back) {
-    input.latchMenu();
-    toMenu();
-  }
-}
-
-function handleWcHubPad(m) {
-  const ids = wcHubButtons();
-  if (m.navX || m.navY) {
-    wcHubNav.idx += m.navX + m.navY;
-    paintWcFocus();
-  }
-  if (m.confirm && ids[wcHubNav.idx]) {
-    input.latchMenu();
-    $(ids[wcHubNav.idx])?.click();
-  }
-  if (m.back) {
-    input.latchMenu();
-    toMenu();
-  }
-}
-
-function renderWcHub() {
-  const cup = loadCup();
-  if (!cup) {
-    showWcPick();
+    el.innerHTML = `<h3>${esc(s.label)}: ${s.champions ? 'Champions!' : `finished ${ordinal(s.place)} of ${s.of}`}</h3>`
+      + `<p>W${s.w} D${s.d} L${s.l} · ${s.gf} scored, ${s.ga} conceded · ${s.pts} pts</p>`
+      + `<p>Growing up: team average OVR ${avg('ovrBefore')} → ${avg('ovrAfter')}</p>${extra}`;
+    el.classList.remove('hidden');
     return;
   }
-  const you = findNation(cup.userId);
-  const status = userStatus(cup);
-  const next = nextUserMatch(cup);
-  $('wc-phase').textContent = describePhase(cup);
-  const youEl = $('wc-you');
-  if (youEl && you) {
-    youEl.innerHTML = `<span class="badge sm"></span>${you.name}`;
-    badgeStyle(youEl.querySelector('.badge'), you);
+  el.innerHTML = '';
+  el.classList.add('hidden');
+}
+
+function renderCareerHub() {
+  const state = loadCareer();
+  if (!state) {
+    showCareerNew();
+    return;
   }
-  const st = $('wc-status');
+  const band = currentBand(state);
+  const club = userClub(state);
+  $('career-title').textContent = club.name;
+  $('career-stage').textContent = state.done ? 'Career complete' : describeStage(state);
+  const you = $('career-you');
+  you.innerHTML = `<span class="badge sm"></span>${esc(band.label)}`;
+  badgeStyle(you.querySelector('.badge'), club);
+
+  $('career-ladder').innerHTML = AGE_BANDS.map((b, i) => {
+    const cls = state.done || i < state.band ? 'done' : i === state.band ? 'now' : '';
+    return `<span class="rung ${cls}">${b.label}<small>${b.academy ? 'Academy' : b.tier.replace(' League', '')}</small></span>`;
+  }).join('') + `<span class="rung pro${state.done ? ' now' : ''}">PRO<small>${esc(PRO_CLUB.name)}</small></span>`;
+
+  const over = seasonOver(state);
+  const next = nextFixture(state);
+  const table = leagueTable(state);
+  const st = $('career-status');
   st.className = 'wc-status';
-  if (status === 'champion') {
+  if (state.done) {
     st.classList.add('champ');
-    st.textContent = `${you.name} are world champions!`;
-  } else if (status === 'eliminated') {
-    st.classList.add('out');
-    const champ = cup.champion ? findNation(cup.champion) : null;
-    st.textContent = champ
-      ? `${you.name} are out. ${champ.name} lift the trophy.`
-      : `${you.name} are eliminated.`;
+    const names = (state.calledUp || []).map((id) => careerPlayerName(state, id)).join(' and ');
+    st.textContent = `${names} called up to ${PRO_CLUB.name}! From U8 to the pros. Career complete.`;
+  } else if (over) {
+    const place = table.findIndex((r) => r.id === 'career') + 1;
+    st.textContent = `Season over: you finished ${ordinal(place)} of ${table.length}. Finish the season to move up an age group.`;
   } else {
-    st.textContent = next
-      ? `Your next match is ready.`
-      : describePhase(cup);
+    const scouts = callUpCandidates(state);
+    st.textContent = band.academy
+      ? (scouts.length
+        ? `Scouts are watching ${scouts.map((id) => careerPlayerName(state, id)).join(', ')}. Keep it up to earn a call-up!`
+        : `Academy football. Get a player to ${PRO_CALLUP_OVR} OVR and the pros will call.`)
+      : `${band.label} ${band.tier}. Win games and train players to grow your team.`;
   }
-  const nextEl = $('wc-next');
-  if (next) {
-    const home = findNation(next.home);
-    const away = findNation(next.away);
-    const meta = next.group
-      ? `Group ${next.group} · Matchday ${next.md}`
-      : roundName(next.round);
-    nextEl.innerHTML = `<div><div class="wn-kicker">Your next match</div>
-      <div class="wn-teams"><span class="badge sm" data-n="h"></span>${home.name} vs ${away.name}<span class="badge sm" data-n="a"></span></div>
-      <div class="wn-meta">${meta}</div></div>`;
+  renderCareerReport(state);
+
+  const nextEl = $('career-next');
+  if (next && !state.done) {
+    const home = next.home === 'career' ? club : opponentClub(state, next.home);
+    const away = next.away === 'career' ? club : opponentClub(state, next.away);
+    nextEl.innerHTML = `<div><div class="wn-kicker">Your next match · ${next.home === 'career' ? 'Home' : 'Away'}</div>
+      <div class="wn-teams"><span class="badge sm" data-n="h"></span>${esc(home.name)} vs ${esc(away.name)}<span class="badge sm" data-n="a"></span></div>
+      <div class="wn-meta">Matchday ${next.round} of ${LEAGUE_SIZE - 1} · ${esc(away === club ? home.town : club.town)}</div></div>`;
     badgeStyle(nextEl.querySelector('[data-n="h"]'), home);
     badgeStyle(nextEl.querySelector('[data-n="a"]'), away);
   } else nextEl.innerHTML = '';
-  const tables = groupTables(cup);
-  const groupsEl = $('wc-groups');
-  groupsEl.innerHTML = GROUPS.map((g) => {
-    const rows = tables[g].map((r, i) => {
-      const n = findNation(r.id);
-      return `<tr class="${r.id === cup.userId ? 'you' : ''}">
-        <td>${i + 1}</td>
-        <td class="team"><span class="badge sm" data-id="${r.id}"></span>${n.short}</td>
-        <td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
-        <td>${r.gf}</td><td>${r.ga}</td><td>${r.pts}</td></tr>`;
-    }).join('');
-    return `<div class="wc-group"><h3>Group ${g}</h3>
-      <table class="wc-table"><thead><tr>
-        <th>#</th><th class="team">Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>Pts</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>`;
-  }).join('');
-  groupsEl.querySelectorAll('.badge').forEach((el) => {
-    const n = findNation(el.dataset.id);
-    if (n) badgeStyle(el, n);
+
+  $('career-table').innerHTML = `<table class="wc-table"><thead><tr><th>#</th><th class="team">Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr></thead><tbody>${
+    table.map((r, i) => `<tr class="${r.id === 'career' ? 'you' : ''}"><td>${i + 1}</td>`
+      + `<td class="team">${esc(teamName(state, r.id))}</td><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>`
+      + `<td>${r.gf - r.ga}</td><td>${r.pts}</td></tr>`).join('')}</tbody></table>`;
+
+  const mine = state.league.fixtures.filter((f) => f.hg != null && (f.home === 'career' || f.away === 'career'));
+  $('career-results').innerHTML = mine.length
+    ? mine.map((f) => {
+      const us = f.home === 'career' ? f.hg : f.ag;
+      const them = f.home === 'career' ? f.ag : f.hg;
+      const res = us > them ? 'w' : us < them ? 'l' : 'd';
+      const opp = f.home === 'career' ? f.away : f.home;
+      return `<div class="cr-res ${res}"><b>${res.toUpperCase()}</b> ${us}–${them} ${f.home === 'career' ? 'vs' : 'at'} ${esc(teamName(state, opp))}</div>`;
+    }).join('')
+    : '<p class="tip">No games played yet this season.</p>';
+
+  const squad = $('career-squad');
+  squad.innerHTML = '';
+  state.squad.forEach((raw, i) => {
+    if (i === SLOT_LABELS.length) {
+      const div = document.createElement('div');
+      div.className = 'cs-divider';
+      div.textContent = 'Substitutes';
+      squad.appendChild(div);
+    }
+    const pl = withTraining(raw);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'drow cs-row';
+    const slot = i < SLOT_LABELS.length ? SLOT_LABELS[i] : 'SUB';
+    b.innerHTML = `<span class="cs-slot">${slot}</span><span class="cs-num">${pl.num}</span>`
+      + `<span class="dwho">${esc(pl.name)}${trainedStar(pl)}</span><span class="dmeta">${esc(pl.pos)}</span>`
+      + `<span class="dstat">${pl.ovr}</span>`;
+    b.onclick = () => openPlayerEditor(raw.id);
+    squad.appendChild(b);
   });
-  const played = cup.fixtures.filter((f) => f.homeG != null);
-  const resEl = $('wc-results');
-  if (played.length) {
-    const byMd = [1, 2, 3].map((md) => {
-      const rows = cup.fixtures.filter((f) => f.md === md && f.homeG != null);
-      if (!rows.length) return '';
-      return `<h3>Matchday ${md}</h3><div class="wc-md">${rows.map((f) =>
-        `<div class="wc-score${f.home === cup.userId || f.away === cup.userId ? ' you' : ''}">${matchLabel(f)}</div>`).join('')}</div>`;
-    }).join('');
-    resEl.innerHTML = byMd;
-  } else resEl.innerHTML = '';
-  const bracket = $('wc-bracket');
-  if (groupsComplete(cup)) {
-    const rounds = bracketRounds(cup);
-    const col = (title, ties) => `<div class="wc-col"><h3>${title}</h3>${ties.map((t) => {
-      const you = t.home === cup.userId || t.away === cup.userId;
-      const h = t.home ? findNation(t.home) : null;
-      const a = t.away ? findNation(t.away) : null;
-      const score = t.homeG == null
-        ? (h && a ? `${h.short} vs ${a.short}` : 'TBD')
-        : matchLabel(t);
-      return `<div class="wc-tie${you ? ' you' : ''}">${score}</div>`;
-    }).join('')}</div>`;
-    bracket.innerHTML = col('Quarter-finals', rounds.qf) + col('Semi-finals', rounds.sf) + col('Final', rounds.final);
-    bracket.classList.remove('hidden');
-  } else {
-    bracket.innerHTML = '';
-    bracket.classList.add('hidden');
+
+  $('btn-career-play')?.classList.toggle('hidden', state.done || over);
+  $('btn-career-season')?.classList.toggle('hidden', state.done || !over);
+  $('btn-career-again')?.classList.toggle('hidden', !state.done);
+  $('btn-career-abandon')?.classList.toggle('hidden', state.done);
+  crHubNav.idx = 0;
+  paintCareerFocus();
+}
+
+// ---------------- player editor
+
+function fillSelect(el, items, value) {
+  el.innerHTML = items.map(([v, label]) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(label)}</option>`).join('');
+}
+
+function openPlayerEditor(id) {
+  const state = loadCareer();
+  const pl = state && findPlayer(state, id);
+  if (!pl) return;
+  editUI.id = id;
+  editUI.look = { ...lookFor(pl) };
+  crPlayerOpen = true;
+  $('ed-name').value = pl.name;
+  $('ed-num').value = pl.num;
+  fillSelect($('ed-pos'), POSITIONS.map((p) => [p, p]), pl.pos);
+  fillSelect($('ed-hair'), HAIR_STYLES.map((h) => [h, HAIR_LABELS[h] || h]), editUI.look.hair);
+  fillSelect($('ed-hc'), HAIR_COLOUR_NAMES.map((c) => [c, c[0].toUpperCase() + c.slice(1)]), editUI.look.hairColour);
+  fillSelect($('ed-cele'), [['', 'Random'], ...CELEBRATION_IDS.map((c) => [c, CELEBRATIONS[c]?.label || c])], pl.celebration || '');
+  const others = state.squad
+    .map((o, i) => ({ o, i }))
+    .filter(({ o }) => o.id !== id)
+    .map(({ o, i }) => [o.id, `${i < SLOT_LABELS.length ? SLOT_LABELS[i] : 'Sub'} · #${o.num} ${o.name}`]);
+  fillSelect($('ed-swap'), [['', 'Keep his place'], ...others], '');
+  $('ed-height').value = editUI.look.height;
+  $('ed-height-v').textContent = `${editUI.look.height} cm`;
+  renderToneSwatches();
+
+  const t = withTraining(pl);
+  $('ed-stats').innerHTML = STAT_KEYS.map((k) => {
+    const bonus = t.trained?.[k] ? ` <span class="trained-star">+${t.trained[k]}★</span>` : '';
+    const cost = pointCost(pl[k]);
+    const pct = Math.round(Math.min(1, (pl.xp?.[k] || 0) / cost) * 100);
+    return `<div class="es-row"><span>${STAT_LABEL[k]}</span><b>${t[k]}</b>${bonus}<i><em style="width:${pct}%"></em></i></div>`;
+  }).join('') + `<div class="es-row ovr"><span>OVR</span><b>${t.ovr}</b><span class="tip">${pl.apps || 0} games · ${pl.goals || 0} goals</span></div>`;
+  $('career-player').classList.remove('hidden');
+  $('ed-name').focus();
+}
+
+function renderToneSwatches() {
+  const box = $('ed-tone');
+  box.innerHTML = '';
+  SKIN_SWATCHES.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `ed-swatch${editUI.look.tone === i ? ' on' : ''}`;
+    b.style.background = c;
+    b.title = `Tone ${i + 1}`;
+    b.onclick = () => {
+      editUI.look.tone = i;
+      renderToneSwatches();
+    };
+    box.appendChild(b);
+  });
+}
+
+function closePlayerEditor() {
+  crPlayerOpen = false;
+  $('career-player').classList.add('hidden');
+  paintCareerFocus();
+}
+
+function savePlayerEditor() {
+  const state = loadCareer();
+  if (!state || !editUI.id) return closePlayerEditor();
+  updatePlayer(state, editUI.id, {
+    name: $('ed-name').value,
+    num: $('ed-num').value,
+    pos: $('ed-pos').value,
+    celebration: $('ed-cele').value || null,
+    look: {
+      tone: editUI.look.tone,
+      hair: $('ed-hair').value,
+      hairColour: $('ed-hc').value,
+      height: Number($('ed-height').value),
+      beard: 0,
+    },
+  });
+  const swap = $('ed-swap').value;
+  if (swap) swapPlayers(state, editUI.id, swap);
+  saveCareer(state);
+  closePlayerEditor();
+  renderCareerHub();
+}
+
+// ---------------- kit editor
+
+const KIT_FIELDS = {
+  home: [['shirt', 'Shirt'], ['shorts', 'Shorts'], ['socks', 'Socks'], ['trim', 'Trim'], ['number', 'Numbers']],
+  away: [['shirt', 'Shirt'], ['shorts', 'Shorts'], ['socks', 'Socks'], ['trim', 'Trim'], ['number', 'Numbers']],
+  gk: [['shirt', 'Shirt'], ['shorts', 'Shorts'], ['socks', 'Socks']],
+};
+
+const cssOf = (v) => (typeof v === 'string' ? v : hex(v >>> 0));
+
+function renderKitEditor() {
+  for (const col of document.querySelectorAll('#career-kit .kit-col')) {
+    const which = col.dataset.kit;
+    const kit = kitDraft[which];
+    const shirt = cssOf(kit.shirt);
+    const num = cssOf(kit.number || '#ffffff');
+    col.innerHTML = `<h3>${which === 'gk' ? 'Goalkeeper' : which === 'home' ? 'Home' : 'Away'}</h3>
+      <div class="kit-prev"><div class="kp-shirt" style="background:${shirt};border-color:${cssOf(kit.trim ?? kit.shirt)}"><span style="color:${num}">9</span></div>
+      <div class="kp-shorts" style="background:${cssOf(kit.shorts)}"></div><div class="kp-socks" style="background:${cssOf(kit.socks)}"></div></div>
+      ${KIT_FIELDS[which].map(([k, label]) => `<label class="kit-field">${label}<input type="color" data-kit="${which}" data-part="${k}" value="${cssOf(kit[k] ?? '#ffffff')}" /></label>`).join('')}`;
   }
-  $('btn-wc-play')?.classList.toggle('hidden', !next);
-  $('btn-wc-new')?.classList.toggle('hidden', status === 'playing');
-  $('btn-wc-abandon')?.classList.toggle('hidden', status !== 'playing');
-  wcHubNav.idx = 0;
-  paintWcFocus();
+  document.querySelectorAll('#career-kit input[type=color]').forEach((inp) => {
+    inp.oninput = () => {
+      const { kit, part } = inp.dataset;
+      kitDraft[kit][part] = part === 'number' ? inp.value : parseInt(inp.value.slice(1), 16);
+      renderKitEditor();
+    };
+  });
+}
+
+function openKitEditor() {
+  const state = loadCareer();
+  if (!state) return;
+  kitDraft = JSON.parse(JSON.stringify({ home: state.club.home, away: state.club.away, gk: state.club.gk }));
+  $('kit-town').textContent = state.club.town;
+  $('kit-nick').value = state.club.nickname;
+  crKitOpen = true;
+  renderKitEditor();
+  $('career-kit').classList.remove('hidden');
+}
+
+function closeKitEditor() {
+  crKitOpen = false;
+  $('career-kit').classList.add('hidden');
+  paintCareerFocus();
+}
+
+function saveKitEditor() {
+  const state = loadCareer();
+  if (!state || !kitDraft) return closeKitEditor();
+  updateKit(state, 'home', kitDraft.home);
+  updateKit(state, 'away', kitDraft.away);
+  state.club.gk = { ...state.club.gk, shirt: kitDraft.gk.shirt & 0xffffff, shorts: kitDraft.gk.shorts & 0xffffff, socks: kitDraft.gk.socks & 0xffffff };
+  renameClub(state, $('kit-nick').value);
+  saveCareer(state);
+  closeKitEditor();
+  renderCareerHub();
+}
+
+function resetKitDraft() {
+  const state = loadCareer();
+  const town = state && findTown(state.club.townId);
+  if (!town) return;
+  kitDraft = JSON.parse(JSON.stringify(defaultKits(town)));
+  renderKitEditor();
+}
+
+// ---------------- pad / keyboard focus
+
+function careerHubButtons() {
+  return ['btn-career-play', 'btn-career-season', 'btn-career-again', 'btn-career-kits', 'btn-career-trainer', 'btn-career-menu', 'btn-career-abandon']
+    .filter((id) => {
+      const el = $(id);
+      return el && !el.classList.contains('hidden');
+    });
+}
+
+function paintCareerFocus() {
+  document.querySelectorAll('#career-new .pad-focus, #career-hub .pad-focus').forEach((el) => el.classList.remove('pad-focus'));
+  if (crPlayerOpen || crKitOpen) return;
+  if (crNewOpen) {
+    if (crNav.zone === 'grid') $('career-towns')?.children[crNav.idx]?.classList.add('pad-focus');
+    else $(crNav.opt ? 'btn-career-start' : 'btn-career-back')?.classList.add('pad-focus');
+    return;
+  }
+  if (crHubOpen) {
+    const ids = careerHubButtons();
+    if (!ids.length) return;
+    crHubNav.idx = ((crHubNav.idx % ids.length) + ids.length) % ids.length;
+    $(ids[crHubNav.idx])?.classList.add('pad-focus');
+  }
+}
+
+function handleCareerPad(m) {
+  if (crPlayerOpen || crKitOpen) {
+    if (m.back) {
+      input.latchMenu();
+      if (crPlayerOpen) closePlayerEditor();
+      else closeKitEditor();
+    }
+    return;
+  }
+  if (crNewOpen) {
+    const grid = $('career-towns');
+    const cols = grid ? gridCols(grid) : 4;
+    if (m.navX || m.navY) {
+      const nx = Math.abs(m.navX) >= Math.abs(m.navY) ? m.navX : 0;
+      const ny = nx ? 0 : m.navY;
+      if (crNav.zone === 'grid') {
+        const next = crNav.idx + nx + ny * cols;
+        if (next >= TOWNS.length) {
+          crNav.zone = 'opts';
+          crNav.opt = 1;
+        } else if (next >= 0) {
+          grid.children[next]?.click();
+          return;
+        }
+      } else if (ny < 0) crNav.zone = 'grid';
+      else if (nx) crNav.opt = nx > 0 ? 1 : 0;
+      paintCareerFocus();
+    }
+    if (m.confirm) {
+      input.latchMenu();
+      if (crNav.zone === 'opts') $(crNav.opt ? 'btn-career-start' : 'btn-career-back')?.click();
+      else {
+        crNav.zone = 'opts';
+        crNav.opt = 1;
+        paintCareerFocus();
+      }
+    }
+    if (m.back) {
+      input.latchMenu();
+      toMenu();
+    }
+    return;
+  }
+  const ids = careerHubButtons();
+  if (m.navX || m.navY) {
+    crHubNav.idx += m.navX + m.navY;
+    paintCareerFocus();
+  }
+  if (m.confirm && ids[crHubNav.idx]) {
+    input.latchMenu();
+    $(ids[crHubNav.idx])?.click();
+  }
+  if (m.back) {
+    input.latchMenu();
+    toMenu();
+  }
 }
 
 function openQuitConfirm() {
@@ -1300,9 +1401,9 @@ function openQuitConfirm() {
   $('pause').classList.add('hidden');
   const tip = $('quit-confirm')?.querySelector('.tip');
   const yes = $('btn-quit-yes');
-  if (inWorldCupMatch) {
-    if (tip) tip.textContent = "The match will end and you'll go back to the World Cup hub. This cannot be undone.";
-    if (yes) yes.textContent = 'Quit to hub';
+  if (inCareerMatch) {
+    if (tip) tip.textContent = "The match will end without a result and you'll go back to your career. You can play it again.";
+    if (yes) yes.textContent = 'Quit to career';
   } else {
     if (tip) tip.textContent = "The match will end and you'll go back to pick clubs. This cannot be undone.";
     if (yes) yes.textContent = 'Quit to team select';
@@ -1320,7 +1421,7 @@ function closeQuitConfirm() {
 }
 
 function confirmQuit() {
-  if (inWorldCupMatch) toWcHub();
+  if (inCareerMatch) toCareerHub();
   else toMenu();
 }
 
@@ -1345,21 +1446,36 @@ $('btn-rematch').onclick = startMatch;
 $('btn-menu').onclick = toMenu;
 $('mode-ai').onclick = () => setMode('1p');
 $('mode-2p').onclick = () => setMode(sel.mode === 'coop' ? 'coop' : 'versus');
-$('mode-wc').onclick = () => openWorldCup();
+$('mode-career').onclick = () => openCareer();
 $('btn-coop').onclick = () => setMode(sel.mode === 'coop' ? 'versus' : 'coop');
-$('btn-wc-back')?.addEventListener('click', () => toMenu());
-$('btn-wc-start')?.addEventListener('click', () => startNewCup());
-$('btn-wc-play')?.addEventListener('click', () => startWcMatch());
-$('btn-wc-new')?.addEventListener('click', () => {
-  clearCup();
-  showWcPick();
+$('btn-career-back')?.addEventListener('click', () => toMenu());
+$('btn-career-start')?.addEventListener('click', () => startNewCareer());
+$('btn-career-play')?.addEventListener('click', () => startCareerMatch());
+$('btn-career-season')?.addEventListener('click', () => finishCareerSeason());
+$('btn-career-again')?.addEventListener('click', () => {
+  clearCareer();
+  showCareerNew();
 });
-$('btn-wc-menu')?.addEventListener('click', () => toMenu());
-$('btn-wc-abandon')?.addEventListener('click', () => {
-  clearCup();
-  toMenu();
+$('btn-career-kits')?.addEventListener('click', () => openKitEditor());
+$('btn-career-trainer')?.addEventListener('click', () => openTrainer());
+$('btn-career-menu')?.addEventListener('click', () => toMenu());
+$('btn-career-abandon')?.addEventListener('click', () => {
+  if (!window.confirm('Start over? Your whole career, squad and results will be deleted.')) return;
+  clearCareer();
+  careerReport = null;
+  seasonReport = null;
+  showCareerNew();
 });
-$('btn-ft-continue')?.addEventListener('click', () => continueWorldCup());
+$('btn-ed-cancel')?.addEventListener('click', () => closePlayerEditor());
+$('btn-ed-save')?.addEventListener('click', () => savePlayerEditor());
+$('ed-height')?.addEventListener('input', (e) => {
+  editUI.look.height = Number(e.target.value);
+  $('ed-height-v').textContent = `${e.target.value} cm`;
+});
+$('btn-kit-cancel')?.addEventListener('click', () => closeKitEditor());
+$('btn-kit-save')?.addEventListener('click', () => saveKitEditor());
+$('btn-kit-reset')?.addEventListener('click', () => resetKitDraft());
+$('btn-ft-continue')?.addEventListener('click', () => continueCareer());
 
 function setPaused(v) {
   if (quitOpen) return;
@@ -1376,20 +1492,19 @@ function setOverlayFocus(name, idx) {
 
 function overlayButtons() {
   if (trainerOpen) return ['btn-trainer-sync', 'btn-trainer-done'];
-  if (dreamOpen) return ['btn-dream-best', 'btn-dream-reset', 'btn-dream-done'];
   if (helpOpen) return ['btn-help-close'];
   if (quitOpen) return ['btn-quit-cancel', 'btn-quit-yes'];
   if (subsOpen) return ['btn-sub-confirm', 'btn-sub-close'];
   if (paused) return ['btn-resume', 'btn-subs', 'btn-quit'];
   if (!$('halftime')?.classList.contains('hidden')) return ['btn-second-half', 'btn-ht-subs'];
   if (!$('fulltime').classList.contains('hidden')) {
-    return inWorldCupMatch ? ['btn-ft-continue'] : ['btn-rematch', 'btn-menu'];
+    return inCareerMatch ? ['btn-ft-continue'] : ['btn-rematch', 'btn-menu'];
   }
   return [];
 }
 
 function paintOverlayFocus() {
-  for (const id of ['btn-help-close', 'btn-resume', 'btn-subs', 'btn-quit', 'btn-quit-cancel', 'btn-quit-yes', 'btn-rematch', 'btn-menu', 'btn-ft-continue', 'btn-second-half', 'btn-ht-subs', 'btn-sub-confirm', 'btn-sub-close', 'btn-dream-best', 'btn-dream-reset', 'btn-dream-done', 'btn-trainer-sync', 'btn-trainer-done']) {
+  for (const id of ['btn-help-close', 'btn-resume', 'btn-subs', 'btn-quit', 'btn-quit-cancel', 'btn-quit-yes', 'btn-rematch', 'btn-menu', 'btn-ft-continue', 'btn-second-half', 'btn-ht-subs', 'btn-sub-confirm', 'btn-sub-close', 'btn-trainer-sync', 'btn-trainer-done']) {
     $(id)?.classList.remove('pad-focus');
   }
   const ids = overlayButtons();
@@ -1409,13 +1524,12 @@ function activateOverlay() {
 function overlayBack() {
   input.latchMenu();
   if (trainerOpen) closeTrainer();
-  else if (dreamOpen) closeDream();
   else if (helpOpen) toggleHelp(false);
   else if (quitOpen) closeQuitConfirm();
   else if (subsOpen) closeSubs();
   else if (paused) setPaused(false);
   else if (!$('fulltime').classList.contains('hidden')) {
-    if (inWorldCupMatch) continueWorldCup();
+    if (inCareerMatch) continueCareer();
     else toMenu();
   }
 }
@@ -1557,16 +1671,16 @@ function gridCols(el) {
 
 function applyMenuFocus() {
   document.querySelectorAll('.pad-focus').forEach((el) => el.classList.remove('pad-focus'));
-  if (wcPickOpen || wcHubOpen) {
-    paintWcFocus();
+  if (careerOverlayOpen() && !trainerOpen) {
+    paintCareerFocus();
     return;
   }
-  if (mode !== 'menu' || helpOpen || dreamOpen || trainerOpen) {
+  if (mode !== 'menu' || helpOpen || trainerOpen) {
     paintOverlayFocus();
     return;
   }
   if (menuNav.zone === 'mode') {
-    const id = menuNav.modeCard === 'wc' ? 'mode-wc'
+    const id = menuNav.modeCard === 'career' ? 'mode-career'
       : (menuNav.modeCard === 'versus' || twoPlayer()) ? 'mode-2p'
       : 'mode-ai';
     $(id)?.classList.add('pad-focus');
@@ -1638,23 +1752,23 @@ function moveOpts(dx, dy) {
 }
 
 function moveMode(dx, dy) {
-  const cards = ['1p', 'versus', 'wc'];
+  const cards = ['1p', 'versus', 'career'];
   let i = cards.indexOf(menuNav.modeCard || (twoPlayer() ? 'versus' : '1p'));
   if (i < 0) i = 0;
   if (dx) {
     i = Math.max(0, Math.min(cards.length - 1, i + dx));
     menuNav.modeCard = cards[i];
-    if (menuNav.modeCard === 'wc') {
+    if (menuNav.modeCard === 'career') {
       $('mode-ai')?.classList.remove('on');
       $('mode-2p')?.classList.remove('on');
-      $('mode-wc')?.classList.add('on');
+      $('mode-career')?.classList.add('on');
       applyMenuFocus();
     } else {
-      $('mode-wc')?.classList.remove('on');
+      $('mode-career')?.classList.remove('on');
       setMode(menuNav.modeCard === 'versus' ? (sel.mode === 'coop' ? 'coop' : 'versus') : '1p');
     }
   }
-  if (dy > 0 && menuNav.modeCard !== 'wc') {
+  if (dy > 0 && menuNav.modeCard !== 'career') {
     menuNav.zone = 'user';
     applyMenuFocus();
   }
@@ -1672,15 +1786,11 @@ function handleSlotNav(slotMenu, side) {
 function handlePadMenu() {
   const m = input.menu;
   if (reconnecting) return;
-  if (wcPickOpen) {
-    handleWcPickPad(m);
+  if (careerOverlayOpen() && !trainerOpen && !helpOpen) {
+    handleCareerPad(m);
     return;
   }
-  if (wcHubOpen) {
-    handleWcHubPad(m);
-    return;
-  }
-  const blocking = helpOpen || dreamOpen || trainerOpen || quitOpen || subsOpen || (paused && !reconnecting)
+  const blocking = helpOpen || trainerOpen || quitOpen || subsOpen || (paused && !reconnecting)
     || !$('fulltime').classList.contains('hidden') || !$('halftime')?.classList.contains('hidden');
   if (subsOpen && (m.lb || m.rb) && game.matchMode === 'versus') {
     subUI.team = m.rb ? 1 : 0;
@@ -1728,9 +1838,9 @@ function handlePadMenu() {
     if (blocking) activateOverlay();
     else if (mode === 'menu') {
       if (menuNav.zone === 'mode') {
-        if (menuNav.modeCard === 'wc') {
+        if (menuNav.modeCard === 'career') {
           input.latchMenu();
-          openWorldCup();
+          openCareer();
         } else {
           menuNav.zone = 'user';
           applyMenuFocus();
@@ -1742,12 +1852,9 @@ function handlePadMenu() {
           $(spec.id).click();
         }
       } else if (!twoPlayer()) {
-        if (sel[menuNav.zone]?.kind === 'dream') openDream(menuNav.zone);
-        else {
-          menuNav.zone = 'opts';
-          menuNav.opt = activeOpts().length - 1;
-          applyMenuFocus();
-        }
+        menuNav.zone = 'opts';
+        menuNav.opt = activeOpts().length - 1;
+        applyMenuFocus();
       }
     }
   }
@@ -2110,9 +2217,11 @@ function handleUI() {
     if (code === 'Escape') {
       if (trainerOpen) closeTrainer();
       else if (helpOpen) toggleHelp(false);
+      else if (crPlayerOpen) closePlayerEditor();
+      else if (crKitOpen) closeKitEditor();
       else if (subsOpen) closeSubs();
       else if (quitOpen) closeQuitConfirm();
-      else if (wcPickOpen || wcHubOpen) toMenu();
+      else if (crNewOpen || crHubOpen) toMenu();
       else if (mode === 'match' && game.state !== 'fulltime') openQuitConfirm();
     }
     if (code === 'KeyP' && mode === 'match' && game.state !== 'fulltime' && !quitOpen && !reconnecting) {
@@ -2204,8 +2313,10 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+refreshFriendlyClubs();
 renderMenu();
 setMode(sel.mode, false);
 $('loading').classList.add('hidden');
 showSyncResult(consumeSyncFromLocation());
+window.addEventListener('hashchange', () => showSyncResult(consumeSyncFromLocation()));
 requestAnimationFrame(frame);

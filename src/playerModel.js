@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   shirtTexture, sleeveTexture, sockTexture, contactShadowTexture, hairTexture, inkFor,
 } from './textures.js';
-import { appearanceFor, AVG_HEIGHT } from './appearance.js';
+import { lookFor, AVG_HEIGHT } from './appearance.js';
 
 // Profiles are [radius, y] pairs listed top to bottom. The seam sits at the back (u = 0), the front at u = 0.5,
 // and v follows arc length from the bottom so textures don't stretch.
@@ -248,7 +248,7 @@ const faceMat = std(0x2a1712, 0.4);
 
 export const POSE = {
   NONE: 0, ARMS_UP: 1, AIRPLANE: 2, KNEE_SLIDE: 3, HANDS_HEAD: 4, CROUCH: 5, HOLD: 6, CLAP: 7,
-  SIUU: 8, SKY_POINT: 9, ARMS_CROSSED: 10, ZEN: 11, HEY_JUDE: 12, DANCE: 13, PRAYER: 14,
+  JUMP_SPIN: 8, SKY_POINT: 9, ARMS_CROSSED: 10, ZEN: 11, ARMS_WIDE: 12, DANCE: 13, PRAYER: 14,
   ICE_SLIDE: 15, COLD: 16, MASK: 17, KISS: 18, THROW: 19,
 };
 export const KICK = { PASS: 0, SHOT: 1, POWER: 2, CHIP: 3, CLEAR: 4, THROW: 5, BICYCLE: 6 };
@@ -300,7 +300,7 @@ export class PlayerModel {
     this.root = new THREE.Group();
     this.body = new THREE.Group();
     this.root.add(this.body);
-    const look = appearanceFor(data.name);
+    const look = lookFor(data);
     // Slightly exaggerated so height differences read from the broadcast camera.
     const tall = THREE.MathUtils.clamp(1 + ((look.height - AVG_HEIGHT) / AVG_HEIGHT) * 1.3, 0.85, 1.16);
     const build = 1 + (tall - 1) * 0.5 + (Math.random() - 0.5) * 0.05;
@@ -530,7 +530,7 @@ export class PlayerModel {
         SL.userData.elbow.rotation.x = SR.userData.elbow.rotation.x = -0.6;
         break;
       }
-      case POSE.SIUU: {
+      case POSE.JUMP_SPIN: {
         // crouch, leap with a half spin, land legs apart with arms thrust down and out
         body.rotation.set(0, Math.PI, 0);
         if (t < 0.3) {
@@ -591,7 +591,7 @@ export class PlayerModel {
         this.head.rotation.set(0.05, 0, 0);
         break;
       }
-      case POSE.HEY_JUDE: {
+      case POSE.ARMS_WIDE: {
         const e = ease;
         SL.rotation.set(-0.25 * e, 0, -1.4 * e);
         SR.rotation.set(-0.25 * e, 0, 1.4 * e);

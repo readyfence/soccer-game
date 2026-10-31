@@ -10,8 +10,8 @@ globalThis.localStorage = {
 
 const T = await import('../src/trainer.js');
 
-const MBAPPE = { name: 'Kylian Mbappé', back: 'MBAPPÉ', num: 10, pac: 97, sho: 92, pas: 81, def: 36, ovr: 91, pos: 'ST', lon: 88, fin: 84 };
-const RMA = { short: 'RMA', home: { shirt: 0xf6f6f6, shorts: 0xf6f6f6, number: '#1a2340' } };
+const STRIKER = { id: 'p7k2', name: 'José Lindqvist', back: 'LINDQVIST', num: 9, pac: 97, sho: 92, pas: 81, def: 36, ovr: 91, pos: 'ST', lon: 88, fin: 84 };
+const CLUB = { short: 'MGM', home: { shirt: 0xf6f6f6, shorts: 0xf6f6f6, number: '#1a2340' } };
 
 function syncCode(obj) {
   return T.toBase64Url(JSON.stringify(obj));
@@ -20,15 +20,15 @@ function syncCode(obj) {
 beforeEach(() => {
   mem.clear();
   // Reset the module cache by forgetting everyone.
-  for (const r of T.trainedList()) T.forgetTrained(r.name);
+  for (const r of T.trainedList()) T.forgetTrained(r.id);
 });
 
 test('asciiName folds accents and special letters for the device font', () => {
-  assert.equal(T.asciiName('Kylian Mbappé'), 'Kylian Mbappe');
-  assert.equal(T.asciiName('Martin Ødegaard'), 'Martin Odegaard');
-  assert.equal(T.asciiName('Joško Gvardiol'), 'Josko Gvardiol');
-  assert.equal(T.asciiName('Rayan Aït-Nouri'), 'Rayan Ait-Nouri');
-  assert.equal(T.asciiName('Thomas Müller'), 'Thomas Muller');
+  assert.equal(T.asciiName('José Lindqvist'), 'Jose Lindqvist');
+  assert.equal(T.asciiName('Søren Ødegård'), 'Soren Odegard');
+  assert.equal(T.asciiName('Joško Brandt'), 'Josko Brandt');
+  assert.equal(T.asciiName('Zoë Aït-Nour'), 'Zoe Ait-Nour');
+  assert.equal(T.asciiName('Lukas Müller'), 'Lukas Muller');
 });
 
 test('base64url round-trips unicode', () => {
@@ -39,13 +39,14 @@ test('base64url round-trips unicode', () => {
 });
 
 test('sendPayload carries base stats, kit, look and return url', () => {
-  const p = T.sendPayload(MBAPPE, {
-    team: RMA, look: { tone: 5, hair: 'buzz', hairColour: 'black', beard: 0 }, ret: 'http://127.0.0.1:5173/', now: 1000, tzMinutes: -300,
+  const p = T.sendPayload(STRIKER, {
+    team: CLUB, look: { tone: 5, hair: 'buzz', hairColour: 'black', beard: 0 }, ret: 'http://127.0.0.1:5173/', now: 1000, tzMinutes: -300,
   });
   assert.equal(p.v, 1);
-  assert.equal(p.name, 'Kylian Mbappé');
-  assert.equal(p.ascii, 'Kylian Mbappe');
-  assert.equal(p.back, 'MBAPPE');
+  assert.equal(p.id, 'p7k2');
+  assert.equal(p.name, 'José Lindqvist');
+  assert.equal(p.ascii, 'Jose Lindqvist');
+  assert.equal(p.back, 'LINDQVIST');
   assert.equal(p.role, 'FWD');
   assert.deepEqual(p.base, [97, 92, 81, 36, 91]);
   assert.deepEqual(p.train, [0, 0, 0, 0, 0]);
@@ -56,45 +57,47 @@ test('sendPayload carries base stats, kit, look and return url', () => {
   const url = T.sendUrl(p);
   assert.ok(url.startsWith('http://soccer-trainer.local/send#'));
   const back = JSON.parse(T.fromBase64Url(url.split('#')[1]));
-  assert.equal(back.name, 'Kylian Mbappé');
+  assert.equal(back.name, 'José Lindqvist');
 });
 
 test('sync from the location hash stores training and cleans the URL', () => {
-  const code = syncCode({ v: 1, name: 'Kylian Mbappé', train: [2, 3, 0, 1, 2], coach: 'Huxley', log: { steps: 12345, games: 4 } });
+  const code = syncCode({ v: 1, id: 'p7k2', name: 'José Lindqvist', train: [2, 3, 0, 1, 2], coach: 'Huxley', log: { steps: 12345, games: 4 } });
   let replaced = null;
   globalThis.history = { replaceState: (_a, _b, url) => { replaced = url; } };
   const res = T.consumeSyncFromLocation({ hash: `#trainer=${code}`, pathname: '/', search: '' });
   assert.equal(replaced, '/');
-  assert.equal(res.name, 'Kylian Mbappé');
+  assert.equal(res.name, 'José Lindqvist');
   assert.deepEqual(res.gained, [2, 3, 0, 1, 2]);
-  assert.equal(T.trainedRecord('Kylian Mbappé').coach, 'Huxley');
-  assert.equal(T.trainedRecord('Kylian Mbappé').log.steps, 12345);
+  assert.equal(T.trainedRecord('p7k2').coach, 'Huxley');
+  assert.equal(T.trainedRecord('p7k2').log.steps, 12345);
 
   // A second sync reports only what is new.
-  const code2 = syncCode({ v: 1, name: 'Kylian Mbappé', train: [3, 3, 1, 1, 2] });
+  // Renamed in the squad editor since: same id, so still the same player.
+  const code2 = syncCode({ v: 1, id: 'p7k2', name: 'Joey Lindqvist', train: [3, 3, 1, 1, 2] });
   const res2 = T.consumeSyncFromLocation({ hash: `#trainer=${code2}`, pathname: '/', search: '' });
   assert.deepEqual(res2.gained, [1, 0, 1, 0, 0]);
+  assert.equal(T.trainedRecord('p7k2').name, 'Joey Lindqvist');
 });
 
 test('withTraining applies deltas, caps at 99 and marks the player', () => {
-  T.recordSync({ name: 'Kylian Mbappé', train: [5, 3, 2, 1, 2], coach: '', log: {} });
-  const t = T.withTraining(MBAPPE);
+  T.recordSync({ id: 'p7k2', name: 'José Lindqvist', train: [5, 3, 2, 1, 2], coach: '', log: {} });
+  const t = T.withTraining(STRIKER);
   assert.equal(t.pac, 99);
   assert.equal(t.sho, 95);
   assert.equal(t.pas, 83);
   assert.equal(t.def, 37);
   assert.equal(t.ovr, 93);
-  assert.ok(t.lon > MBAPPE.lon);
+  assert.ok(t.lon > STRIKER.lon);
   assert.deepEqual(t.trained, { pac: 5, sho: 3, pas: 2, def: 1, ovr: 2 });
   assert.equal(T.withTraining(t), t, 'applying twice is a no-op');
-  assert.equal(MBAPPE.pac, 97, 'source data is untouched');
-  const other = { ...MBAPPE, name: 'Someone Else' };
+  assert.equal(STRIKER.pac, 97, 'source data is untouched');
+  const other = { ...STRIKER, id: 'p0000', name: 'Someone Else' };
   assert.equal(T.withTraining(other), other);
 });
 
 test('sending an already trained player continues from his training', () => {
-  T.recordSync({ name: 'Kylian Mbappé', train: [1, 2, 0, 0, 1], coach: '', log: {} });
-  const p = T.sendPayload(MBAPPE, { team: RMA });
+  T.recordSync({ id: 'p7k2', name: 'José Lindqvist', train: [1, 2, 0, 0, 1], coach: '', log: {} });
+  const p = T.sendPayload(STRIKER, { team: CLUB });
   assert.deepEqual(p.base, [97, 92, 81, 36, 91]);
   assert.deepEqual(p.train, [1, 2, 0, 0, 1]);
 });

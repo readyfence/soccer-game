@@ -11,8 +11,8 @@ export const PEN_DEPTH = 16.5;
 export const PEN_HW = 20.16;
 
 export const KITS = {
-  home: { name: 'Cursor FC', short: 'CUR', shirt: 0x1d4fd6, shorts: 0xf4f6fb, socks: 0x1d4fd6, trim: 0xffffff, number: '#ffffff', gk: 0x18c26b },
-  away: { name: 'Red Lions', short: 'RDL', shirt: 0xc8102e, shorts: 0x151515, socks: 0xc8102e, trim: 0x111111, number: '#ffffff', gk: 0xf2c200 },
+  home: { name: 'Lakeside FC', short: 'LAK', shirt: 0x1d4fd6, shorts: 0xf4f6fb, socks: 0x1d4fd6, trim: 0xffffff, number: '#ffffff', gk: 0x18c26b },
+  away: { name: 'Prairie United', short: 'PRA', shirt: 0xc8102e, shorts: 0x151515, socks: 0xc8102e, trim: 0x111111, number: '#ffffff', gk: 0xf2c200 },
 };
 
 export const DIFF_ORDER = ['beginner', 'amateur', 'semipro', 'professional', 'worldclass', 'legendary', 'ultimate'];

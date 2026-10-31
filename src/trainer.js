@@ -8,11 +8,11 @@
 //   Sync:  game  -> http://<trainer>/sync?to=<game url>   device redirects back to
 //          <game url>#trainer=<payload>                   with the trained stats
 //
-// Trained players are stored as stat deltas keyed by player name, so every version of a
-// player (current squad, prime legend, dream team draft) gets the same training.
+// Trained players are stored as stat deltas keyed by the player's id (names can be edited
+// in the squad editor), and applied on top of the career stats wherever he plays.
 
 const STORE_KEY = 'socker26.trainer';
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 export const DEFAULT_HOST = 'soccer-trainer.local';
 export const PROTOCOL_VERSION = 1;
 
@@ -80,21 +80,25 @@ export function setTrainerHost(host) {
   return trainerHost();
 }
 
-export function trainedRecord(name) {
-  return state().players[String(name || '')] || null;
+function keyOf(pl) {
+  return String((typeof pl === 'string' ? pl : pl?.id || pl?.name) || '');
+}
+
+export function trainedRecord(plOrId) {
+  return state().players[keyOf(plOrId)] || null;
 }
 
 export function trainedList() {
   return Object.entries(state().players)
-    .map(([name, rec]) => ({ name, ...rec }))
+    .map(([id, rec]) => ({ id, ...rec }))
     .sort((a, b) => (b.at || 0) - (a.at || 0));
 }
 
-export function forgetTrained(name) {
+export function forgetTrained(id) {
   const s = state();
-  if (!s.players[name]) return;
+  if (!s.players[id]) return;
   const players = { ...s.players };
-  delete players[name];
+  delete players[id];
   saveTrainer({ ...s, players });
 }
 
@@ -110,7 +114,7 @@ function deltasOf(rec) {
 // Safe to call on already-trained data: the copy remembers its untrained source.
 export function withTraining(pl) {
   if (!pl || pl.trained) return pl;
-  const d = deltasOf(trainedRecord(pl.name));
+  const d = deltasOf(trainedRecord(pl));
   if (!d || d.every((v) => v === 0)) return pl;
   const up = (v, k) => clampInt((Number(v) || 0) + k, 1, 99);
   const out = {
@@ -148,7 +152,7 @@ const ASCII_MAP = {
   ß: 'ss', ø: 'o', Ø: 'O', æ: 'ae', Æ: 'AE', œ: 'oe', Œ: 'OE', đ: 'd', Đ: 'D', ł: 'l', Ł: 'L', ı: 'i', þ: 'th', ð: 'd',
 };
 
-// The device's fonts are ASCII only, so names are sent pre-folded ("Mbappé" -> "Mbappe").
+// The device's fonts are ASCII only, so names are sent pre-folded ("José" -> "Jose").
 export function asciiName(s) {
   return String(s || '')
     .replace(/[ßøØæÆœŒđĐłŁıþð]/g, (c) => ASCII_MAP[c])
@@ -160,10 +164,10 @@ export function asciiName(s) {
 
 const ROLE_OF = { GK: 'GK', RB: 'DEF', CB: 'DEF', LB: 'DEF', CM: 'MID', CDM: 'MID', RW: 'FWD', ST: 'FWD', LW: 'FWD' };
 
-// Builds the JSON the device receives. `pl` is a roster/star-pool player (untrained values),
-// `team` is the club or nation it came from (for the kit colours), `look` its appearance.
+// Builds the JSON the device receives. `pl` is a squad player (untrained values), `team`
+// the club he plays for (kit colours), `look` his appearance.
 export function sendPayload(pl, { team, look, ret, now = Date.now(), tzMinutes } = {}) {
-  const rec = trainedRecord(pl.name);
+  const rec = trainedRecord(pl);
   const base = STATS.map((k) => clampInt(pl[k], 1, 99));
   const train = deltasOf(rec) || [0, 0, 0, 0, 0];
   const kit = team?.home || { shirt: 0x111111, shorts: 0x111111, number: '#ffd400' };
@@ -171,6 +175,7 @@ export function sendPayload(pl, { team, look, ret, now = Date.now(), tzMinutes }
   const tz = Number.isFinite(tzMinutes) ? tzMinutes : -new Date(now).getTimezoneOffset();
   return {
     v: PROTOCOL_VERSION,
+    id: keyOf(pl),
     name: pl.name,
     ascii: asciiName(pl.name) || 'Player',
     back: asciiName(pl.back || pl.name).toUpperCase().slice(0, 14),
@@ -228,10 +233,12 @@ export function parseSyncPayload(code) {
     return null;
   }
   if (!data || data.v !== PROTOCOL_VERSION || typeof data.name !== 'string' || !data.name.trim()) return null;
+  const id = typeof data.id === 'string' && data.id.trim() ? data.id.trim().slice(0, 40) : data.name.trim();
   if (!Array.isArray(data.train) || data.train.length < 5) return null;
   const train = data.train.slice(0, 5).map((v) => clampInt(v, 0, MAX_DELTA));
   const log = data.log && typeof data.log === 'object' ? data.log : {};
   return {
+    id,
     name: data.name.trim(),
     train,
     coach: typeof data.coach === 'string' ? data.coach.slice(0, 24) : '',
@@ -248,13 +255,13 @@ export function parseSyncPayload(code) {
 
 export function recordSync(parsed, at = Date.now()) {
   const s = state();
-  const prev = s.players[parsed.name];
+  const prev = s.players[parsed.id];
   const players = {
     ...s.players,
-    [parsed.name]: { train: parsed.train, coach: parsed.coach, log: parsed.log, at, prev: prev?.train || null },
+    [parsed.id]: { name: parsed.name, train: parsed.train, coach: parsed.coach, log: parsed.log, at, prev: prev?.train || null },
   };
   saveTrainer({ ...s, players });
-  return players[parsed.name];
+  return players[parsed.id];
 }
 
 // Reads `#trainer=<payload>` left by the device's redirect, stores it and cleans the URL.
@@ -270,10 +277,10 @@ export function consumeSyncFromLocation(loc = typeof location !== 'undefined' ? 
   } catch { /* ignore */ }
   const parsed = parseSyncPayload(m[1]);
   if (!parsed) return { error: 'That trainer link was damaged. Try syncing again.' };
-  const before = deltasOf(trainedRecord(parsed.name)) || [0, 0, 0, 0, 0];
+  const before = deltasOf(trainedRecord(parsed.id)) || [0, 0, 0, 0, 0];
   recordSync(parsed);
   const gained = parsed.train.map((v, i) => v - before[i]);
-  return { name: parsed.name, train: parsed.train, gained, coach: parsed.coach, log: parsed.log };
+  return { id: parsed.id, name: parsed.name, train: parsed.train, gained, coach: parsed.coach, log: parsed.log };
 }
 
 export function deltaLabel(train) {
