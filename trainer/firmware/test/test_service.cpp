@@ -166,6 +166,12 @@ static void testTrainerFlow() {
   CHECK(u.s.energy == t.s.energy);
   CHECK(u.s.program.days[0][0].act == t.s.program.days[0][0].act);
   CHECK(strcmp(u.s.settings.coach, "Huxley") == 0);
+  t.s.settings.flipTilt = true;
+  t.markDirty();
+  t.save(2000, true);
+  Trainer v;
+  v.begin(&disk);
+  CHECK(v.s.settings.flipTilt);
 }
 
 static void testDashboardAndProgram() {

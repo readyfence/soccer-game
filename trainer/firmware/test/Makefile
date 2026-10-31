@@ -7,8 +7,15 @@ SERVICE_SRC = test_service.cpp ../src/codec.cpp ../src/trainer.cpp ../src/core/r
 # Path to ArduinoJson's src/ folder (PlatformIO puts it in .pio/libdeps/cores3/ArduinoJson/src).
 ARDUINOJSON ?= ../.pio/libdeps/cores3/ArduinoJson/src
 
-test: build/test_core
+GAMES_SRC = test_games.cpp ../src/core/minigames.cpp
+
+test: build/test_core build/test_games
 	./build/test_core
+	./build/test_games
+
+build/test_games: $(GAMES_SRC) ../src/core/minigames.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -o $@ $(GAMES_SRC) -lm
 
 service: build/test_service
 	./build/test_service
