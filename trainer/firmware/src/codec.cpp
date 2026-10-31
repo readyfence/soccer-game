@@ -156,6 +156,8 @@ bool parseIncoming(const char* text, Incoming& out) {
   PlayerCard c;
   c.present = true;
   copyStr(c.name, sizeof(c.name), name);
+  copyAscii(c.id, sizeof(c.id), doc["id"] | name);
+  if (!c.id[0]) copyStr(c.id, sizeof(c.id), "player");
   copyAscii(c.ascii, sizeof(c.ascii), doc["ascii"] | name);
   if (!c.ascii[0]) copyStr(c.ascii, sizeof(c.ascii), "Player");
   copyAscii(c.back, sizeof(c.back), doc["back"] | c.ascii);
@@ -195,6 +197,7 @@ std::string syncJson(const TrainerState& s) {
   JsonDocument doc;
   const PlayerCard& p = s.player;
   doc["v"] = 1;
+  doc["id"] = p.id;
   doc["name"] = p.name;
   JsonArray train = doc["train"].to<JsonArray>();
   for (int i = 0; i < STAT_COUNT; i++) train.add(p.train[i]);
@@ -215,6 +218,7 @@ std::string syncJson(const TrainerState& s) {
 // ---------------------------------------------------------------- storage
 
 static void writeCard(JsonObject o, const PlayerCard& p, bool full) {
+  o["id"] = p.id;
   o["name"] = p.name;
   JsonArray train = o["train"].to<JsonArray>();
   JsonArray xp = o["xp"].to<JsonArray>();
@@ -268,6 +272,7 @@ static bool readCard(JsonObjectConst o, PlayerCard& p) {
   p = PlayerCard();
   p.present = true;
   copyStr(p.name, sizeof(p.name), name);
+  copyAscii(p.id, sizeof(p.id), o["id"] | name);
   copyAscii(p.ascii, sizeof(p.ascii), o["ascii"] | "Player");
   copyAscii(p.back, sizeof(p.back), o["back"] | "");
   copyAscii(p.pos, sizeof(p.pos), o["pos"] | "ST");
@@ -410,8 +415,8 @@ std::string rosterToJson(const PlayerCard& p) {
 bool rosterFromJson(const char* json, PlayerCard& p) {
   JsonDocument doc;
   if (!json || deserializeJson(doc, json)) return false;
-  const char* name = doc["name"] | "";
-  if (strcmp(name, p.name) != 0) return false;
+  const char* id = doc["id"] | "";
+  if (strcmp(id, p.id) != 0) return false;
   readProgress(doc.as<JsonObjectConst>(), p);
   return true;
 }

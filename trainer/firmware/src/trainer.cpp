@@ -27,14 +27,14 @@ void Trainer::save(uint32_t nowMs, bool force) {
 
 // ---------------------------------------------------------------- players
 
-void Trainer::rosterPath(const char* name, char* out, size_t size) const {
-  snprintf(out, size, "/roster/%08lx.json", (unsigned long)fnv1a(name));
+void Trainer::rosterPath(const char* id, char* out, size_t size) const {
+  snprintf(out, size, "/roster/%08lx.json", (unsigned long)fnv1a(id));
 }
 
 void Trainer::archiveCurrent() {
   if (!s.player.present || !_storage) return;
   char path[32];
-  rosterPath(s.player.name, path, sizeof(path));
+  rosterPath(s.player.id, path, sizeof(path));
   _storage->write(path, rosterToJson(s.player));
 }
 
@@ -43,7 +43,7 @@ void Trainer::archiveCurrent() {
 void Trainer::restoreFromRoster(PlayerCard& card) {
   if (!_storage) return;
   char path[32];
-  rosterPath(card.name, path, sizeof(path));
+  rosterPath(card.id, path, sizeof(path));
   std::string json;
   if (!_storage->read(path, json)) return;
   PlayerCard saved = card;
@@ -63,9 +63,10 @@ void Trainer::restoreFromRoster(PlayerCard& card) {
 Receive Trainer::receive(const char* payload, Incoming& parsed) {
   if (!parseIncoming(payload, parsed)) return Receive::Bad;
   PlayerCard card = parsed.card;
-  if (s.player.present && strcmp(s.player.name, card.name) == 0) {
-    // Same player again: refresh his look and base stats, keep everything earned here.
+  if (s.player.present && strcmp(s.player.id, card.id) == 0) {
+    // Same player again: refresh his name, look and base stats, keep everything earned here.
     PlayerCard merged = s.player;
+    memcpy(merged.name, card.name, sizeof(merged.name));
     memcpy(merged.base, card.base, sizeof(merged.base));
     for (int i = 0; i < STAT_COUNT; i++) {
       if (card.train[i] > merged.train[i]) merged.train[i] = card.train[i];

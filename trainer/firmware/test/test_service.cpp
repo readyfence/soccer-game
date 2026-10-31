@@ -37,15 +37,15 @@ struct MemStorage : Storage {
 };
 
 // Exactly what the game's sendPayload() produces (see tests/trainer.test.js).
-static const char* MBAPPE =
-    "{\"v\":1,\"name\":\"Kylian Mbapp\xc3\xa9\",\"ascii\":\"Kylian Mbappe\",\"back\":\"MBAPPE\",\"num\":10,"
+static const char* LINDQVIST =
+    "{\"v\":1,\"id\":\"p7k2\",\"name\":\"Jos\xc3\xa9 Lindqvist\",\"ascii\":\"Jose Lindqvist\",\"back\":\"LINDQVIST\",\"num\":10,"
     "\"pos\":\"ST\",\"role\":\"FWD\",\"club\":\"RMA\",\"base\":[97,92,81,36,91],\"train\":[0,0,0,0,0],"
     "\"kit\":[16185078,16185078,1712960],\"look\":{\"tone\":5,\"hair\":\"buzz\",\"hc\":\"black\",\"beard\":0},"
     "\"ret\":\"http://127.0.0.1:5173/\",\"now\":1793462400000,\"tz\":-300}";
 
-static const char* SAKA =
-    "{\"v\":1,\"name\":\"Bukayo Saka\",\"ascii\":\"Bukayo Saka\",\"back\":\"SAKA\",\"num\":7,\"pos\":\"RW\","
-    "\"club\":\"ARS\",\"base\":[90,85,84,60,88],\"train\":[1,0,0,0,0],\"kit\":[14680064,16777215,16777215],"
+static const char* HALVORSEN =
+    "{\"v\":1,\"id\":\"p9x1\",\"name\":\"Theo Halvorsen\",\"ascii\":\"Theo Halvorsen\",\"back\":\"HALVORSEN\",\"num\":7,\"pos\":\"RW\","
+    "\"club\":\"OSO\",\"base\":[90,85,84,60,88],\"train\":[1,0,0,0,0],\"kit\":[14680064,16777215,16777215],"
     "\"look\":{\"tone\":5,\"hair\":\"crop\",\"hc\":\"black\",\"beard\":0},\"ret\":\"javascript:alert(1)\"}";
 
 static void testBase64() {
@@ -66,9 +66,9 @@ static void testBase64() {
 static void testParse() {
   puts("parse incoming");
   Incoming in;
-  CHECK(parseIncoming(MBAPPE, in));
-  CHECK(strcmp(in.card.name, "Kylian Mbapp\xc3\xa9") == 0);
-  CHECK(strcmp(in.card.ascii, "Kylian Mbappe") == 0);
+  CHECK(parseIncoming(LINDQVIST, in));
+  CHECK(strcmp(in.card.name, "Jos\xc3\xa9 Lindqvist") == 0);
+  CHECK(strcmp(in.card.ascii, "Jose Lindqvist") == 0);
   CHECK(in.card.role == ROLE_FWD);
   CHECK(in.card.base[0] == 97 && in.card.base[4] == 91);
   CHECK(in.card.kitNumber == 0x1a2340);
@@ -77,11 +77,11 @@ static void testParse() {
   CHECK(in.ret == "http://127.0.0.1:5173/");
 
   Incoming b64;
-  CHECK(parseIncoming(base64UrlEncode(MBAPPE).c_str(), b64));
+  CHECK(parseIncoming(base64UrlEncode(LINDQVIST).c_str(), b64));
   CHECK(strcmp(b64.card.name, in.card.name) == 0);
 
   Incoming saka;
-  CHECK(parseIncoming(SAKA, saka));
+  CHECK(parseIncoming(HALVORSEN, saka));
   CHECK(saka.ret.empty());  // javascript: URLs are refused
   CHECK(!saka.hasTime);
 
@@ -101,7 +101,7 @@ static void testTrainerFlow() {
   CHECK(!t.s.player.present);
 
   Incoming in;
-  CHECK(t.receive(MBAPPE, in) == Receive::Accepted);
+  CHECK(t.receive(LINDQVIST, in) == Receive::Accepted);
   CHECK(t.s.player.present);
   t.s.today.key = 20261102;
   t.session(ACT_SHOOT, 60);  // 180 SHO XP: not quite a point at 92
@@ -109,7 +109,7 @@ static void testTrainerFlow() {
   CHECK(t.s.player.train[SHO] == 1);
 
   // Sending him again keeps progress and takes the higher training values.
-  std::string again = MBAPPE;
+  std::string again = LINDQVIST;
   size_t pos = again.find("\"train\":[0,0,0,0,0]");
   again.replace(pos, 19, "\"train\":[2,0,0,0,0]");
   CHECK(t.receive(again.c_str(), in) == Receive::Merged);
@@ -118,23 +118,31 @@ static void testTrainerFlow() {
   // Sync payload carries the deltas and overall gain under the original UTF-8 name.
   std::string sync;
   CHECK(base64UrlDecode(t.syncCode().c_str(), sync));
-  CHECK(sync.find("\"name\":\"Kylian Mbapp\xc3\xa9\"") != std::string::npos);
+  CHECK(sync.find("\"name\":\"Jos\xc3\xa9 Lindqvist\"") != std::string::npos);
   CHECK(sync.find("\"train\":[2,1,0,0,1]") != std::string::npos);
+  CHECK(sync.find("\"id\":\"p7k2\"") != std::string::npos);
+
+  // Renamed in the game: still the same player (matched by id).
+  std::string renamed = again;
+  renamed.replace(renamed.find("Jos\xc3\xa9 Lindqvist"), strlen("Jos\xc3\xa9 Lindqvist"), "Joey Lindqvist");
+  CHECK(t.receive(renamed.c_str(), in) == Receive::Merged);
+  CHECK(strcmp(t.s.player.name, "Joey Lindqvist") == 0);
+  CHECK(t.s.player.train[SHO] == 1);
   CHECK(sync.find("\"coach\":\"Huxley\"") != std::string::npos);
 
   // A different player waits for confirmation on the device.
-  CHECK(t.receive(SAKA, in) == Receive::Pending);
+  CHECK(t.receive(HALVORSEN, in) == Receive::Pending);
   CHECK(t.hasPending());
-  CHECK(strcmp(t.s.player.ascii, "Kylian Mbappe") == 0);
+  CHECK(strcmp(t.s.player.ascii, "Jose Lindqvist") == 0);
   t.declinePending();
   CHECK(!t.hasPending());
-  CHECK(t.receive(SAKA, in) == Receive::Pending);
+  CHECK(t.receive(HALVORSEN, in) == Receive::Pending);
   t.acceptPending();
-  CHECK(strcmp(t.s.player.ascii, "Bukayo Saka") == 0);
+  CHECK(strcmp(t.s.player.ascii, "Theo Halvorsen") == 0);
   CHECK(t.s.player.train[PAC] == 1);
 
-  // Mbappé comes back later: his device progress is restored from the roster.
-  CHECK(t.receive(MBAPPE, in) == Receive::Pending);
+  // José comes back later: his device progress is restored from the roster.
+  CHECK(t.receive(LINDQVIST, in) == Receive::Pending);
   t.acceptPending();
   CHECK(t.s.player.train[PAC] == 2 && t.s.player.train[SHO] == 1);
   CHECK(t.s.player.games == 1 && t.s.player.sessions == 1);
@@ -166,9 +174,9 @@ static void testDashboardAndProgram() {
   Trainer t;
   t.begin(&disk);
   Incoming in;
-  t.receive(SAKA, in);
+  t.receive(HALVORSEN, in);
   std::string dash = dashboardJson(t.s, 0, true);
-  CHECK(dash.find("\"name\":\"Bukayo Saka\"") != std::string::npos);
+  CHECK(dash.find("\"name\":\"Theo Halvorsen\"") != std::string::npos);
   CHECK(dash.find("\"activities\"") != std::string::npos);
 
   CHECK(t.applyProgram("{\"days\":[[{\"t\":\"pass\",\"m\":25}],[],[],[],[],[],[{\"t\":\"match\",\"m\":90}]]}"));

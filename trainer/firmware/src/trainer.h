@@ -55,7 +55,7 @@ class Trainer {
   void archiveCurrent();
   void restoreFromRoster(PlayerCard& card);
   void note(const Gain& g);
-  void rosterPath(const char* name, char* out, size_t size) const;
+  void rosterPath(const char* id, char* out, size_t size) const;
 
   Storage* _storage = nullptr;
   bool _dirty = false;

@@ -39,7 +39,8 @@ struct Look {
 // points earned here; the game applies `train` on top of its own data when synced.
 struct PlayerCard {
   bool present = false;
-  char name[48] = {0};   // original UTF-8 name, the key the game uses
+  char id[24] = {0};     // stable player id from the game (names can be edited there)
+  char name[48] = {0};   // UTF-8 name as shown in the game
   char ascii[32] = {0};  // display name, ASCII only
   char back[16] = {0};
   char pos[4] = {0};

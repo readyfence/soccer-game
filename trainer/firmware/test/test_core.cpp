@@ -32,11 +32,12 @@ static int g_checks = 0;
     }                                                                                         \
   } while (0)
 
-static PlayerCard mbappe() {
+static PlayerCard striker() {
   PlayerCard p;
   p.present = true;
-  strcpy(p.name, "Kylian Mbapp\xc3\xa9");
-  strcpy(p.ascii, "Kylian Mbappe");
+  strcpy(p.id, "p7k2");
+  strcpy(p.name, "Jos\xc3\xa9 Lindqvist");
+  strcpy(p.ascii, "Jose Lindqvist");
   strcpy(p.pos, "ST");
   p.role = ROLE_FWD;
   uint8_t base[5] = {97, 92, 81, 36, 91};
@@ -46,7 +47,7 @@ static PlayerCard mbappe() {
 
 static TrainerState freshState(uint32_t day = 20261102) {  // a Monday
   TrainerState s;
-  resetForNewPlayer(s, mbappe());
+  resetForNewPlayer(s, striker());
   s.today.key = day;
   s.energy = 3;
   return s;
@@ -231,7 +232,7 @@ static void testDaysAndStreaks() {
 
   // Clock not set yet: counts stay, then belong to the first known day.
   TrainerState u;
-  resetForNewPlayer(u, mbappe());
+  resetForNewPlayer(u, striker());
   addMovement(u, 1234, 0, 0);
   CHECK(!rollDay(u, 20261110));
   CHECK_EQ(u.today.key, 20261110);
@@ -277,7 +278,7 @@ static void testProgram() {
   TrainerState c = freshState();
   c.program.days[0][0].act = ACT_PASS;
   c.programCustom = true;
-  resetForNewPlayer(c, mbappe());
+  resetForNewPlayer(c, striker());
   CHECK_EQ(c.program.days[0][0].act, ACT_PASS);
 }
 
