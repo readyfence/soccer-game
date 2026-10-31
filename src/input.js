@@ -217,6 +217,13 @@ export class Input {
 
   onKey(e, isDown) {
     const code = e.code;
+    // Typing in a search or address box must not steer players or toggle menus.
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) {
+      if (isDown && code === 'Escape') this.ui.add(code);
+      if (!isDown) this.keys.delete(code);
+      return;
+    }
     if (PREVENT.has(code) || code.startsWith('Arrow')) e.preventDefault();
     if (isDown && e.repeat) return;
     if (isDown) this.keys.add(code);

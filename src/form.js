@@ -43,7 +43,7 @@ function saveRaw(state) {
 }
 
 export function formKey(data, clubId) {
-  const name = String(data?.name || '').trim();
+  const name = String(data?.id || data?.name || '').trim();
   const club = String(clubId || data?.clubId || '').trim();
   return `${name}|${club}`;
 }

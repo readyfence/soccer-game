@@ -7,6 +7,7 @@ import { teamRating, shotTraits, makeBench } from './teams.js';
 import { rumble, P1_COLOR, P2_COLOR } from './input.js';
 import { newStats, matchRatings } from './ratings.js';
 import { applyFormToData, playerForm, recordMatchForm } from './form.js';
+import { withTraining } from './trainer.js';
 
 // 4-3-3 in team coordinates: own goal at x = -52.5, +z is the team's right side.
 const FORMATION = [
@@ -70,7 +71,8 @@ function launch(from, tx, tz, speedH, spin, grounded) {
 }
 
 class Player {
-  constructor(game, team, idx, data) {
+  constructor(game, team, idx, rawData) {
+    const data = withTraining(rawData);
     this.game = game;
     this.team = team;
     this.idx = idx;

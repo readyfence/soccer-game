@@ -94,18 +94,18 @@
         <div class="mode-pick" id="mode-pick">
           <button type="button" class="mode-card on" id="mode-ai" data-v="1p">
             <span class="mode-kicker">Play</span>
-            <span class="mode-title">vs AI</span>
+            <span class="mode-title">Friendly</span>
             <span class="mode-sub">One player against the computer</span>
           </button>
           <button type="button" class="mode-card" id="mode-2p" data-v="versus">
             <span class="mode-kicker">Local</span>
             <span class="mode-title">Two Player</span>
-            <span class="mode-sub">You vs dad · two Xbox controllers</span>
+            <span class="mode-sub">Two players · two Xbox controllers</span>
           </button>
-          <button type="button" class="mode-card" id="mode-wc" data-v="wc">
-            <span class="mode-kicker">Tournament</span>
-            <span class="mode-title">World Cup</span>
-            <span class="mode-sub">Pick a nation and play for the trophy</span>
+          <button type="button" class="mode-card" id="mode-career" data-v="career">
+            <span class="mode-kicker">Career</span>
+            <span class="mode-title">Youth to Pro</span>
+            <span class="mode-sub">U8 to the Academy until a player turns pro</span>
           </button>
         </div>
         <button type="button" id="btn-coop" class="coop-link hidden">Both vs AI instead (co-op)</button>
@@ -117,14 +117,14 @@
         <div class="select-row">
           <div class="side">
             <h2 id="label-user">Your club</h2>
-            <p class="pick-hint">Dream Team, clubs, nations, and prime XIs</p>
+            <p class="pick-hint">Local clubs from around Maple Grove</p>
             <div class="club-grid" id="grid-user"></div>
             <div class="club-info" id="info-user"></div>
           </div>
           <div class="vs">VS</div>
           <div class="side">
             <h2 id="label-ai">Opponent (AI)</h2>
-            <p class="pick-hint">Dream Team, clubs, nations, and prime XIs</p>
+            <p class="pick-hint">Local clubs from around Maple Grove</p>
             <div class="club-grid" id="grid-ai"></div>
             <div class="club-info" id="info-ai"></div>
           </div>
@@ -157,6 +157,7 @@
           </div>
           <button id="btn-controls" class="ghost">Controls</button>
           <button id="btn-start" class="primary">KICK OFF</button>
+          <button id="btn-trainer" class="ghost">Trainer</button>
         </div>
         <div id="menu-pad-hint">
           <span class="xb-dot a"></span> Confirm
@@ -171,81 +172,142 @@
       </div>
     </div>
 
-    <div id="wc-pick" class="overlay hidden">
+    <div id="career-new" class="overlay hidden">
       <div class="wc-inner">
         <div class="wc-head">
           <div>
-            <h2>World Cup</h2>
-            <p class="tip">Pick your nation. Sixteen teams, four groups, then knockout.</p>
+            <h2>New Career</h2>
+            <p class="tip">Pick your home town. You start as an amateur U8 team and grow up together through U10, U12 and U14, then the Academy. The career ends when one of your players is called up to the pros.</p>
           </div>
         </div>
-        <div class="club-grid" id="wc-grid"></div>
-        <div class="club-info" id="wc-info"></div>
+        <div class="club-grid" id="career-towns"></div>
+        <div class="career-name">
+          <label for="career-nick">Team name</label>
+          <span id="career-town-label" class="career-town">Maple Grove</span>
+          <input id="career-nick" type="text" maxlength="20" autocomplete="off" spellcheck="false" />
+        </div>
         <div class="wc-actions">
-          <button type="button" class="ghost" id="btn-wc-back">Back</button>
-          <button type="button" class="primary" id="btn-wc-start">Enter the Cup</button>
+          <button type="button" class="ghost" id="btn-career-back">Back</button>
+          <button type="button" class="primary" id="btn-career-start">Start career</button>
         </div>
       </div>
     </div>
 
-    <div id="wc-hub" class="overlay hidden">
+    <div id="career-hub" class="overlay hidden">
       <div class="wc-inner wide">
         <div class="wc-head">
           <div>
-            <h2>World Cup</h2>
-            <p id="wc-phase" class="tip">Group Stage</p>
+            <h2 id="career-title">Career</h2>
+            <p id="career-stage" class="tip">U8 · Rec League · Season 1</p>
           </div>
-          <div id="wc-you" class="wc-you"></div>
+          <div id="career-you" class="wc-you"></div>
         </div>
-        <div id="wc-status" class="wc-status"></div>
-        <div id="wc-next" class="wc-next"></div>
-        <div id="wc-groups" class="wc-groups"></div>
-        <div id="wc-results" class="wc-results"></div>
-        <div id="wc-bracket" class="wc-bracket hidden"></div>
+        <div id="career-ladder" class="career-ladder"></div>
+        <div id="career-status" class="wc-status"></div>
+        <div id="career-report" class="career-report hidden"></div>
+        <div id="career-next" class="wc-next"></div>
+        <div class="career-cols">
+          <div>
+            <h3 class="trainer-h">League table</h3>
+            <div id="career-table"></div>
+            <h3 class="trainer-h">Results</h3>
+            <div id="career-results" class="career-results"></div>
+          </div>
+          <div>
+            <h3 class="trainer-h">Squad <span class="career-hint">tap a player to edit · ★ trained on the device</span></h3>
+            <div id="career-squad" class="career-squad"></div>
+          </div>
+        </div>
         <div class="wc-actions">
-          <button type="button" class="primary" id="btn-wc-play">Play next match</button>
-          <button type="button" class="primary hidden" id="btn-wc-new">New World Cup</button>
-          <button type="button" class="ghost" id="btn-wc-menu">Back to menu</button>
-          <button type="button" class="ghost danger" id="btn-wc-abandon">Quit World Cup</button>
+          <button type="button" class="primary" id="btn-career-play">Play next match</button>
+          <button type="button" class="primary hidden" id="btn-career-season">Finish season</button>
+          <button type="button" class="primary hidden" id="btn-career-again">New career</button>
+          <button type="button" class="ghost" id="btn-career-kits">Kits &amp; name</button>
+          <button type="button" class="ghost" id="btn-career-trainer">Trainer</button>
+          <button type="button" class="ghost" id="btn-career-menu">Back to menu</button>
+          <button type="button" class="ghost danger" id="btn-career-abandon">Start over</button>
         </div>
       </div>
     </div>
 
-    <div id="dream" class="overlay hidden">
-      <div class="dream-inner">
-        <div class="dream-head">
-          <div>
-            <h2>Dream Team</h2>
-            <p id="dream-sub" class="tip">Draft anyone — Zlatan, Pelé, Messi, whoever. They slot into position.</p>
-          </div>
-          <div id="dream-ovr" class="dream-ovr">OVR 94</div>
+    <div id="career-player" class="overlay hidden">
+      <div class="pause-inner editor">
+        <h2>Edit player</h2>
+        <div class="ed-grid">
+          <label for="ed-name">Name</label><input id="ed-name" type="text" maxlength="28" autocomplete="off" spellcheck="false" />
+          <label for="ed-num">Number</label><input id="ed-num" type="number" min="1" max="99" />
+          <label for="ed-pos">Position</label><select id="ed-pos"></select>
+          <label>Skin tone</label><div id="ed-tone" class="ed-swatches"></div>
+          <label for="ed-hair">Hair</label><select id="ed-hair"></select>
+          <label for="ed-hc">Hair colour</label><select id="ed-hc"></select>
+          <label for="ed-height">Height</label><div class="ed-range"><input id="ed-height" type="range" min="160" max="198" /><span id="ed-height-v"></span></div>
+          <label for="ed-cele">Celebration</label><select id="ed-cele"></select>
+          <label for="ed-swap">Swap places</label><select id="ed-swap"></select>
         </div>
-        <div class="dream-body">
-          <div class="dream-pitch" id="dream-pitch"></div>
-          <div class="dream-pool">
-            <input id="dream-search" type="search" placeholder="Draft Zlatan, Pelé, Messi…" autocomplete="off" />
-            <div class="dream-filters" id="dream-era">
-              <button type="button" data-v="all" class="on">All</button>
-              <button type="button" data-v="prime">Prime</button>
-              <button type="button" data-v="now">Present</button>
-            </div>
-            <div class="dream-filters" id="dream-pos">
-              <button type="button" data-v="all" class="on">Any</button>
-              <button type="button" data-v="GK">GK</button>
-              <button type="button" data-v="DEF">DEF</button>
-              <button type="button" data-v="MID">MID</button>
-              <button type="button" data-v="FWD">FWD</button>
-            </div>
-            <div id="dream-list" class="dream-list"></div>
-          </div>
-        </div>
-        <div class="dream-actions">
-          <button type="button" class="ghost" id="btn-dream-best">Best XI</button>
-          <button type="button" class="ghost" id="btn-dream-reset">Clear draft</button>
-          <button type="button" class="primary" id="btn-dream-done">Done</button>
+        <div id="ed-stats" class="ed-stats"></div>
+        <div class="wc-actions">
+          <button type="button" class="ghost" id="btn-ed-cancel">Cancel</button>
+          <button type="button" class="primary" id="btn-ed-save">Save</button>
         </div>
       </div>
     </div>
+
+    <div id="career-kit" class="overlay hidden">
+      <div class="pause-inner editor">
+        <h2>Kits &amp; name</h2>
+        <div class="ed-grid">
+          <label for="kit-nick">Team name</label>
+          <div class="career-name tight"><span id="kit-town" class="career-town"></span><input id="kit-nick" type="text" maxlength="20" autocomplete="off" spellcheck="false" /></div>
+        </div>
+        <div class="kit-cols">
+          <div class="kit-col" data-kit="home"><h3>Home</h3></div>
+          <div class="kit-col" data-kit="away"><h3>Away</h3></div>
+          <div class="kit-col" data-kit="gk"><h3>Goalkeeper</h3></div>
+        </div>
+        <p class="tip">Opponents switch to their away kit, or a plain one, if their colours are too close to yours. On away days you wear your away kit unless it clashes.</p>
+        <div class="wc-actions">
+          <button type="button" class="ghost" id="btn-kit-reset">Town colours</button>
+          <button type="button" class="ghost" id="btn-kit-cancel">Cancel</button>
+          <button type="button" class="primary" id="btn-kit-save">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="trainer" class="overlay hidden">
+      <div class="dream-inner trainer-inner">
+        <div class="dream-head">
+          <div>
+            <h2>Trainer</h2>
+            <p class="tip">Send a player from your career squad to the handheld trainer. Train him with mini games and real practice, then sync him back here.</p>
+          </div>
+        </div>
+        <div class="trainer-link">
+          <label for="trainer-host">Trainer address</label>
+          <input id="trainer-host" type="text" spellcheck="false" autocomplete="off" placeholder="soccer-trainer.local" />
+          <span id="trainer-status" class="trainer-status">Not checked</span>
+          <button type="button" class="ghost" id="btn-trainer-check">Check</button>
+        </div>
+        <p class="tip trainer-steps">On the trainer, tap <b>LINK</b> first. Both devices need to be on the same Wi-Fi.</p>
+        <div class="dream-body trainer-body">
+          <div class="dream-pool">
+            <h3 class="trainer-h">Send a player</h3>
+            <input id="trainer-search" type="search" placeholder="Find a player in your squad" autocomplete="off" />
+            <div id="trainer-list" class="dream-list"></div>
+          </div>
+          <div class="dream-pool">
+            <h3 class="trainer-h">Trained players</h3>
+            <div id="trainer-trained" class="dream-list"></div>
+            <button type="button" class="primary" id="btn-trainer-sync">Sync from Trainer</button>
+            <p class="tip trainer-steps">Sync brings back whoever is on the trainer now, with all the stats he has earned.</p>
+          </div>
+        </div>
+        <div class="dream-actions">
+          <button type="button" class="primary" id="btn-trainer-done">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="trainer-toast" class="hidden"></div>
 
     <div id="help" class="overlay hidden">
       <div class="help-inner">
