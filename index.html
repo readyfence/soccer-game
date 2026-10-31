@@ -4,9 +4,171 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Socker 26</title>
-    <meta http-equiv="refresh" content="0; url=./play/" />
+    <meta name="description" content="A soccer game from Maple Grove, Minnesota. Take a U8 rec team all the way to the Academy, train your players for real with a handheld trainer, and get one of them called up to the pros." />
+    <meta property="og:title" content="Socker 26: from the park to the pros" />
+    <meta property="og:description" content="Grow a U8 rec team into Academy players. Train them for real with the handheld trainer." />
+    <meta property="og:image" content="/site/shot-match.jpg" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>" />
+    <link rel="stylesheet" href="/src/site.css" />
   </head>
   <body>
-    <p><a href="./play/">Play Socker 26</a></p>
+    <header class="nav">
+      <a class="logo" href="#top">SOCKER<span>26</span></a>
+      <nav>
+        <a href="#story">Story</a>
+        <a href="#features">Features</a>
+        <a href="#trainer">Trainer</a>
+        <a href="#gallery">Screenshots</a>
+      </nav>
+      <a class="btn small" href="./play/">Play now</a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <video class="hero-video" src="/site/gameplay.mp4" poster="/site/shot-match.jpg" autoplay muted loop playsinline></video>
+        <div class="hero-shade"></div>
+        <div class="hero-copy">
+          <p class="kicker">A soccer game from Maple Grove, Minnesota</p>
+          <h1>From the park<br />to the <em>pros.</em></h1>
+          <p class="lede">Take a U8 rec team from your home town all the way to the Academy. Win games, train your players, and keep going until one of them gets the call from the pros.</p>
+          <div class="cta">
+            <a class="btn" href="./play/">Play now, free in your browser</a>
+            <a class="btn ghost" href="#video">Watch gameplay</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="story" id="story">
+        <div class="wrap">
+          <p class="kicker">The story</p>
+          <h2>Every pro started on a Saturday morning in the park.</h2>
+          <p class="lede">You start with a squad of eight-year-olds in a Maple Grove rec league, with orange slices at half time and parents on the sideline. Each season the kids grow up. Win your league, push through travel soccer, earn an Academy invite, and get a player good enough for the pro scouts to call.</p>
+          <ol class="ladder">
+            <li><b>U8</b><span>Rec League</span><p>Your first team. Learn to pass, and to stop everyone chasing the ball at once.</p></li>
+            <li><b>U10</b><span>Rec League</span><p>The kids get quicker. Find out who your keeper really is.</p></li>
+            <li><b>U12</b><span>Travel</span><p>Away days in Wayzata, Rogers and St. Michael. Tougher teams, longer drives.</p></li>
+            <li><b>U14</b><span>Travel</span><p>Finish strong and the Academy comes knocking.</p></li>
+            <li><b>U16</b><span>Academy</span><p>Elite football. Scouts start turning up.</p></li>
+            <li><b>U18</b><span>Academy</span><p>Last chance to impress.</p></li>
+            <li class="pro"><b>PRO</b><span>North Woods FC</span><p>One of your players gets the call. Career complete.</p></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="video" id="video">
+        <div class="wrap">
+          <p class="kicker">Gameplay</p>
+          <h2>Real matches, eleven a side.</h2>
+          <video controls muted playsinline poster="/site/shot-match.jpg" src="/site/gameplay.mp4"></video>
+          <p class="note">Captured straight from the game. Play with a keyboard or an Xbox controller.</p>
+        </div>
+      </section>
+
+      <section class="features" id="features">
+        <div class="wrap">
+          <p class="kicker">Features</p>
+          <h2>Built for one family, playable by everyone.</h2>
+          <div class="grid">
+            <article>
+              <h3>Career: U8 to the pros</h3>
+              <p>Seven-game league seasons, a league table, end-of-season reports and growth spurts. Players earn experience from match ratings, goals and wins, and the best of them catch the pro scouts' eye.</p>
+            </article>
+            <article>
+              <h3>Your town, your rivals</h3>
+              <p>Eighteen clubs from around Maple Grove: the Osseo Otters, Plymouth Pines, Rogers Rockets, Wayzata Walleyes, Champlin Comets and more. Every team and player is made up.</p>
+            </article>
+            <article>
+              <h3>Your squad, your way</h3>
+              <p>Rename your players and give them numbers, positions, skin tones, hairstyles, heights and goal celebrations. Design your home and away kits; opponents change kit if the colours clash.</p>
+            </article>
+            <article class="voice">
+              <h3>Jenko on the mic</h3>
+              <p>Over a hundred lines of recorded commentary, from "Bent it into the corner!" to "Rattles the woodwork!", plus real crowd sounds from the sideline.</p>
+              <div class="listen">
+                <button type="button" data-clip="kickoff">▶ Kick-off</button>
+                <button type="button" data-clip="goal_corner">▶ Goal</button>
+                <button type="button" data-clip="save_what">▶ Save</button>
+                <button type="button" data-clip="post_rattles">▶ Woodwork</button>
+                <button type="button" data-clip="town_way">▶ Wayzata!</button>
+              </div>
+            </article>
+            <article>
+              <h3>Two players</h3>
+              <p>Play a friend on the same computer with two controllers, or team up against the computer. Online play, where one player hosts and the other joins with a code, is on the way.</p>
+            </article>
+            <article>
+              <h3>Train for real</h3>
+              <p>Send a player to the handheld trainer, take it to practice, and bring him back stronger. Read on.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="trainer" id="trainer">
+        <div class="wrap two">
+          <div>
+            <p class="kicker">The handheld trainer</p>
+            <h2>Real training makes your players better.</h2>
+            <p class="lede">Pick a player from your squad and send him over Wi-Fi to a pocket-sized trainer (an M5Stack CoreS3). He lives there while you train:</p>
+            <ul class="ticks">
+              <li><b>Steps and running</b> are counted from your pocket and build pace.</li>
+              <li><b>Real practice</b> such as shooting, passing or a team session gets logged on the touchscreen, with a weekly plan set by a parent.</li>
+              <li><b>Four mini games:</b> Penalties, Tilt Dribble (steer by tilting the device), Keepy-Uppy and Tackle Time.</li>
+              <li><b>Streaks and energy:</b> moving for real earns the energy that pays for mini games.</li>
+            </ul>
+            <p>Sync him back to the game and his new stats come with him. Trained players wear a ★.</p>
+            <a class="btn ghost" href="/flasher/">Install the trainer on a CoreS3</a>
+          </div>
+          <div class="device" aria-hidden="true">
+            <div class="screen">
+              <div class="d-top"><span>⚡⚡⚡</span><span>8,421 steps</span></div>
+              <div class="d-body">
+                <div class="d-avatar"><i class="hair"></i><i class="head"></i><i class="shirt">9</i></div>
+                <div class="d-stats">
+                  <b class="d-name">Huxley Hero</b>
+                  <span class="d-ovr">OVR 54</span>
+                  <div><em>PAC</em><i style="--v:62%"></i></div>
+                  <div><em>SHO</em><i style="--v:71%"></i></div>
+                  <div><em>PAS</em><i style="--v:48%"></i></div>
+                  <div><em>DEF</em><i style="--v:22%"></i></div>
+                </div>
+              </div>
+              <div class="d-btns"><span>PLAY</span><span>LOG</span><span>PLAN</span><span>MORE</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="gallery" id="gallery">
+        <div class="wrap">
+          <p class="kicker">Screenshots</p>
+          <h2>A look around.</h2>
+          <div class="shots">
+            <figure><img loading="lazy" src="/site/shot-match.jpg" alt="A match in progress" /><figcaption>Match day</figcaption></figure>
+            <figure><img loading="lazy" src="/site/shot-career.jpg" alt="Career hub with league table and squad" /><figcaption>Career hub</figcaption></figure>
+            <figure><img loading="lazy" src="/site/shot-editor.jpg" alt="Player editor" /><figcaption>Player editor</figcaption></figure>
+            <figure><img loading="lazy" src="/site/shot-menu.jpg" alt="Club select with local teams" /><figcaption>Local clubs</figcaption></figure>
+            <figure><img loading="lazy" src="/site/shot-match2.jpg" alt="Attack on goal" /><figcaption>On the attack</figcaption></figure>
+            <figure><img loading="lazy" src="/site/shot-kits.jpg" alt="Kit editor" /><figcaption>Kit designer</figcaption></figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="final">
+        <div class="wrap">
+          <h2>Lace up.</h2>
+          <a class="btn" href="./play/">Play Socker 26</a>
+          <p class="note">Runs in Chrome, Edge and Safari on a laptop or desktop. Xbox controllers supported.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Made in Maple Grove, Minnesota, by Huxley and family.</p>
+      <p class="small">All clubs and players in Socker 26 are fictional. Commentary voice and sound effects made with ElevenLabs.</p>
+    </footer>
+
+    <dialog id="lightbox"><img alt="" /><button type="button" aria-label="Close">×</button></dialog>
+    <script type="module" src="/src/site.js"></script>
   </body>
 </html>
