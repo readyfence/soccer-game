@@ -31,4 +31,16 @@ build/test_core: $(SRC) ../src/core/*.h
 clean:
 	rm -rf build
 
-.PHONY: test service clean
+# Compile-only check of the device code on a PC (nothing is linked or run).
+# UI files use the real M5GFX headers; main.cpp/net.cpp use the real M5Unified headers
+# plus stubs/ that mirror the arduino-esp32 2.0.x APIs they call.
+LIBS ?= ../.pio/libdeps/cores3
+M5GFX ?= $(LIBS)/M5GFX/src
+M5UNIFIED ?= $(LIBS)/M5Unified/src
+SYNTAX = $(CXX) -std=c++17 -fsyntax-only -Wall -Wextra -Werror -isystem $(M5GFX) -isystem $(ARDUINOJSON)
+
+syntax:
+	for f in ../src/ui/*.cpp ../src/codec.cpp ../src/trainer.cpp; do echo "  $$f"; $(SYNTAX) $$f || exit 1; done
+	for f in ../src/net.cpp ../src/main.cpp; do echo "  $$f"; $(SYNTAX) -Istubs -isystem $(M5UNIFIED) $$f || exit 1; done
+
+.PHONY: test service syntax clean
