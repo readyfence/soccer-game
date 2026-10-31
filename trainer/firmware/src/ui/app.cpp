@@ -131,6 +131,12 @@ void App::update(const Input& in) {
     updateSwap(in);
     return;
   }
+  // Points earned by walking show up straight away, except mid-game.
+  Gain walked;
+  if (_current != ScreenId::Game && trainer.takeBackgroundLevelUps(walked)) {
+    showReward("Your steps paid off!", walked);
+    return;
+  }
   _screens[(int)_current]->update(*this, in);
 }
 
