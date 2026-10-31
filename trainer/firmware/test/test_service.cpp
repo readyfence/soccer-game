@@ -80,10 +80,10 @@ static void testParse() {
   CHECK(parseIncoming(base64UrlEncode(LINDQVIST).c_str(), b64));
   CHECK(strcmp(b64.card.name, in.card.name) == 0);
 
-  Incoming saka;
-  CHECK(parseIncoming(HALVORSEN, saka));
-  CHECK(saka.ret.empty());  // javascript: URLs are refused
-  CHECK(!saka.hasTime);
+  Incoming theo;
+  CHECK(parseIncoming(HALVORSEN, theo));
+  CHECK(theo.ret.empty());  // javascript: URLs are refused
+  CHECK(!theo.hasTime);
 
   Incoming bad;
   CHECK(!parseIncoming("{\"v\":2,\"name\":\"x\",\"base\":[1,2,3,4,5]}", bad));
