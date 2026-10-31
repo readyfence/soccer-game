@@ -509,3 +509,25 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 4
   .cr-row { grid-template-columns: 1fr 40px 64px; }
   .cr-row .cr-gain { grid-column: 1 / -1; }
 }
+
+/* ---------------------------------------------------------------- online two-player */
+.online-row { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.online-row .online-label { font-size: 13px; font-weight: 800; opacity: 0.8; }
+.online-row button.ghost, .online-chip button.ghost { padding: 7px 14px; font-size: 13px; }
+.online-chip { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; font-weight: 800; }
+.online-chip .dot { width: 10px; height: 10px; border-radius: 50%; background: #ffd400; box-shadow: 0 0 8px rgba(255,212,0,0.7); }
+.online-chip.ok .dot { background: #2bb673; box-shadow: 0 0 8px rgba(43,182,115,0.8); }
+#online, #online-notice { z-index: 18; pointer-events: auto; }
+.online-inner { width: min(620px, 94vw); }
+.online-view { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+.online-code { font-size: 64px; font-weight: 900; letter-spacing: 14px; color: #ffd400; font-family: ui-monospace, Menlo, monospace; padding: 6px 18px 6px 32px;
+  background: rgba(255,212,0,0.08); border: 2px dashed rgba(255,212,0,0.5); border-radius: 12px; }
+#online-code-input { font-size: 34px; font-weight: 900; letter-spacing: 10px; text-transform: uppercase; text-align: center; width: 260px;
+  background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.2); color: #fff; border-radius: 10px; padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; }
+.online-status { min-height: 1.4em; font-weight: 800; text-align: center; }
+.online-status.err { color: #ff8a8a; }
+.online-status.ok { color: #6ff0ad; }
+#online-guest-grid { width: 100%; max-height: 40vh; overflow: auto; }
+.online-badge { position: fixed; top: 22px; left: 22px; z-index: 9; pointer-events: none; background: rgba(8,12,24,0.82);
+  border: 1px solid rgba(43,182,115,0.6); border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 800; }
+.online-badge.warn { border-color: rgba(255,196,0,0.7); color: #ffd400; }

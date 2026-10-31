@@ -11,6 +11,9 @@ import { Ball } from './ball.js';
 import { Sfx } from './audio.js';
 import { Commentary } from './commentary.js';
 import { Game } from './game.js';
+import { OnlineSession } from './online.js';
+import { hostGame, joinGame } from './netlink.js';
+import { normalizeCode, toPlain } from './netcode.js';
 import { statLine, ratingTier } from './ratings.js';
 import { formMarkup, formView } from './form.js';
 import { lookFor, HAIR_STYLES, HAIR_COLOUR_NAMES } from './appearance.js';
@@ -460,6 +463,7 @@ function setMode(mode, persist = true) {
   if (persist) {
     try { localStorage.setItem(MODE_STORE, sel.mode); } catch { /* ignore */ }
   }
+  syncOnlineMenu();
   const hint = $('menu-pad-hint');
   if (hint) {
     hint.innerHTML = twoPlayer()
@@ -478,7 +482,10 @@ function setMode(mode, persist = true) {
 }
 
 function updateJoinUI() {
-  if (!twoPlayer()) return;
+  if (!twoPlayer() || net) {
+    updateKickoffBtn();
+    return;
+  }
   const st = input.joinStatus();
   for (let i = 0; i < 2; i++) {
     const el = $(`join-p${i + 1}`);
@@ -492,6 +499,11 @@ function updateJoinUI() {
 function updateKickoffBtn() {
   const btn = $('btn-start');
   if (!btn) return;
+  if (net) {
+    btn.disabled = !isHost();
+    btn.textContent = isHost() ? 'KICK OFF (ONLINE)' : 'Waiting for the host…';
+    return;
+  }
   const ready = !twoPlayer() || input.bothJoined();
   btn.disabled = !ready;
   btn.textContent = ready ? 'KICK OFF' : 'Waiting for P1 & P2…';
@@ -549,6 +561,7 @@ function renderMenu() {
     badgeStyle(info.querySelector('.badge'), sel[side]);
   }
   updateJoinUI();
+  sendLobby();
   if (typeof applyMenuFocus === 'function') applyMenuFocus();
 }
 
@@ -751,6 +764,302 @@ $('btn-trainer-check')?.addEventListener('click', () => checkTrainer());
 $('btn-trainer-sync')?.addEventListener('click', () => syncFromTrainer());
 $('btn-trainer-done')?.addEventListener('click', () => closeTrainer());
 
+// ------------------------------------------------------------------ online two-player
+
+var net = null; // OnlineSession while connected (var: read by setMode during start-up)
+var onlineUi = { open: false, view: '', abort: null };
+
+const isHost = () => net?.role === 'host';
+const isGuest = () => net?.role === 'guest';
+
+function onlineStatus(text, kind = '') {
+  const el = $('online-status');
+  el.textContent = text || '';
+  el.className = `online-status${kind ? ` ${kind}` : ''}`;
+}
+
+function showOnlineView(view, title) {
+  onlineUi.open = true;
+  onlineUi.view = view;
+  $('online-title').textContent = title;
+  for (const v of ['host', 'join', 'guest']) $(`online-${v}`).classList.toggle('hidden', v !== view);
+  $('online').classList.remove('hidden');
+}
+
+function closeOnlineOverlay() {
+  onlineUi.open = false;
+  $('online').classList.add('hidden');
+}
+
+function syncOnlineMenu() {
+  const two = sel.mode === 'versus' || sel.mode === 'coop';
+  $('online-row')?.classList.toggle('hidden', !two || !!net);
+  const chip = $('online-chip');
+  if (chip) {
+    chip.classList.toggle('hidden', !net);
+    chip.classList.toggle('ok', !!net);
+    const ping = net?.rtt != null ? ` · ${net.rtt} ms` : '';
+    $('online-chip-text').textContent = isHost()
+      ? `Online: friend connected${ping}. You are P1 (left club); your friend is P2 (right club).`
+      : '';
+  }
+  if (net) {
+    $('join-row')?.classList.add('hidden');
+    $('join-kb')?.classList.add('hidden');
+    $('btn-coop')?.classList.add('hidden');
+    $('label-ai').textContent = "Friend's club (online)";
+  }
+}
+
+function lobbyClub(c) {
+  return c ? { name: c.name, short: c.short, badge: c.badge } : null;
+}
+
+function sendLobby() {
+  if (!isHost()) return;
+  net.send({ t: 'lobby', user: lobbyClub(sel.user), ai: lobbyClub(sel.ai), len: sel.len, diff: sel.diff });
+}
+
+function startOnlineSession(link, role) {
+  net = new OnlineSession({
+    link, role, game, hud, sfx, stadium,
+    onMessage: onOnlineMessage,
+    onClose: () => onOnlineClosed(),
+  });
+  input.setPlayMode('1p');
+  input.resetJoin();
+}
+
+async function hostOnline() {
+  if (net) return;
+  showOnlineView('host', 'Host an online game');
+  $('online-code').textContent = '·····';
+  onlineStatus('Getting a code…');
+  const abort = new AbortController();
+  onlineUi.abort = abort;
+  try {
+    const link = await hostGame({
+      signal: abort.signal,
+      onCode: (code) => {
+        $('online-code').textContent = code;
+        onlineStatus('Waiting for your friend to join…');
+      },
+    });
+    onlineUi.abort = null;
+    startOnlineSession(link, 'host');
+    closeOnlineOverlay();
+    setMode('versus');
+    renderMenu();
+    sendLobby();
+  } catch (err) {
+    onlineUi.abort = null;
+    if (err?.message !== 'cancelled') onlineStatus(err?.message || 'Could not host a game.', 'err');
+  }
+}
+
+function joinOnlineView() {
+  if (net) return;
+  showOnlineView('join', 'Join an online game');
+  onlineStatus('');
+  const inp = $('online-code-input');
+  inp.value = '';
+  setTimeout(() => inp.focus(), 50);
+}
+
+async function joinOnline() {
+  if (net) return;
+  const raw = $('online-code-input').value;
+  if (!normalizeCode(raw)) {
+    onlineStatus('Codes are 5 letters and numbers, like K7Q2M.', 'err');
+    return;
+  }
+  onlineStatus('Connecting…');
+  $('btn-online-connect').disabled = true;
+  try {
+    const link = await joinGame(raw);
+    startOnlineSession(link, 'guest');
+    showGuestLobby();
+  } catch (err) {
+    onlineStatus(err?.message || 'Could not join that game.', 'err');
+  } finally {
+    $('btn-online-connect').disabled = false;
+  }
+}
+
+var guestLobby = null;
+var guestPick = null;
+
+function showGuestLobby() {
+  showOnlineView('guest', 'Connected');
+  onlineStatus('Waiting for the host to kick off…', 'ok');
+  renderGuestLobby();
+}
+
+function renderGuestLobby() {
+  const L = guestLobby;
+  $('online-guest-picks').textContent = L
+    ? `Host's club: ${L.user?.name ?? '…'} · ${L.len} min match. You play as ${L.ai?.name ?? '…'}.`
+    : 'Connected! The host is picking the match.';
+  const grid = $('online-guest-grid');
+  grid.innerHTML = '';
+  for (const c of pickerTeams()) {
+    const el = document.createElement('div');
+    const on = guestPick ? guestPick === c : L?.ai?.name === c.name;
+    el.className = `club${on ? ' on' : ''}`;
+    el.innerHTML = `<span class="badge"></span><span class="cname">${esc(c.name)}</span>`;
+    badgeStyle(el.querySelector('.badge'), c);
+    el.onclick = () => {
+      guestPick = c;
+      net?.send({ t: 'pick', club: toPlain(c) });
+      renderGuestLobby();
+    };
+    grid.appendChild(el);
+  }
+}
+
+function onOnlineMessage(msg) {
+  switch (msg.t) {
+    case 'lobby':
+      if (isGuest()) {
+        guestLobby = msg;
+        if (onlineUi.open && onlineUi.view === 'guest') renderGuestLobby();
+      }
+      break;
+    case 'pick':
+      if (isHost() && msg.club?.players?.length === 11) {
+        sel.ai = msg.club;
+        renderMenu();
+      }
+      break;
+    case 'start':
+      if (isGuest()) startGuestMatch(msg);
+      break;
+    case 'tomenu':
+      if (isGuest()) {
+        leaveMatch();
+        $('menu').classList.add('hidden');
+        showGuestLobby();
+      }
+      break;
+    case 'req':
+      if (!isHost() || mode !== 'match') break;
+      if (msg.what === 'pause' && game.state !== 'fulltime') setPaused(!paused);
+      if (msg.what === 'secondHalf' && game.state === 'halftime') {
+        game.continueHalf = true;
+        $('halftime')?.classList.add('hidden');
+      }
+      break;
+    case 'full':
+      onlineStatus('That game already has two players.', 'err');
+      break;
+    default:
+      break;
+  }
+}
+
+function startGuestMatch(msg) {
+  if (!msg.user?.players || !msg.ai?.players) return;
+  closeOnlineOverlay();
+  sel.user = msg.user;
+  sel.ai = msg.ai;
+  sel.diff = resolveDifficulty(msg.diff);
+  sel.len = Number(msg.len) || sel.len;
+  net.guestPrepare();
+  startMatch({ online: 'guest' });
+}
+
+function onOnlineClosed() {
+  const wasMatch = mode === 'match';
+  const wasHost = net?.role === 'host';
+  net = null;
+  guestLobby = null;
+  guestPick = null;
+  $('online-badge')?.classList.add('hidden');
+  input.setPlayMode(sel.mode === 'versus' || sel.mode === 'coop' ? sel.mode : '1p');
+  if (onlineUi.open) closeOnlineOverlay();
+  $('online-notice-title').textContent = wasHost ? 'Your friend left' : 'Lost the host';
+  $('online-notice-text').textContent = wasMatch
+    ? 'The online game has ended.'
+    : 'The connection closed. You can host or join again from Two Player.';
+  if (wasMatch) paused = true;
+  $('online-notice').classList.remove('hidden');
+  syncOnlineMenu();
+}
+
+function leaveOnline() {
+  if (!net) return;
+  const s = net;
+  net = null;
+  s.close();
+  $('online-badge')?.classList.add('hidden');
+  input.setPlayMode(sel.mode === 'versus' || sel.mode === 'coop' ? sel.mode : '1p');
+  syncOnlineMenu();
+}
+
+function cancelOnline() {
+  if (onlineUi.abort) {
+    onlineUi.abort.abort();
+    onlineUi.abort = null;
+  }
+  if (isGuest()) leaveOnline();
+  closeOnlineOverlay();
+  syncOnlineMenu();
+  updateKickoffBtn();
+}
+
+function updateOnlineBadge() {
+  const el = $('online-badge');
+  if (!el) return;
+  const show = !!net && mode === 'match';
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+  const late = net.rtt != null && net.rtt > 180;
+  el.classList.toggle('warn', late);
+  el.textContent = `Online · ${isHost() ? 'you host (P1)' : 'you are P2'}${net.rtt != null ? ` · ${net.rtt} ms` : ''}`;
+}
+
+// The guest mirrors the host's pause screen; its Resume asks the host to resume.
+var guestPauseShown = false;
+function syncGuestPause() {
+  if (!isGuest() || mode !== 'match') return;
+  const want = !!net.hostPaused;
+  if (want === guestPauseShown) return;
+  guestPauseShown = want;
+  $('pause').classList.toggle('hidden', !want);
+  $('btn-subs')?.classList.toggle('hidden', want);
+  $('pause-diff').textContent = want ? 'Paused by the host' : $('pause-diff').textContent;
+}
+
+$('btn-online-host')?.addEventListener('click', () => hostOnline());
+$('btn-online-join')?.addEventListener('click', () => joinOnlineView());
+$('btn-online-connect')?.addEventListener('click', () => joinOnline());
+$('online-code-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') joinOnline();
+});
+$('btn-online-cancel')?.addEventListener('click', () => cancelOnline());
+$('btn-online-leave')?.addEventListener('click', () => {
+  leaveOnline();
+  setMode(sel.mode, false);
+  renderMenu();
+});
+$('btn-online-copy')?.addEventListener('click', async () => {
+  const code = $('online-code').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    onlineStatus('Code copied. Waiting for your friend to join…');
+  } catch {
+    onlineStatus(`Your code is ${code}. Waiting for your friend…`);
+  }
+});
+$('btn-online-notice-ok')?.addEventListener('click', () => {
+  $('online-notice').classList.add('hidden');
+  toMenu();
+});
+setInterval(() => {
+  if (net && mode === 'menu') syncOnlineMenu();
+}, 2000);
+
+
 function toggleHelp(force) {
   helpOpen = force ?? !helpOpen;
   $('help').classList.toggle('hidden', !helpOpen);
@@ -760,15 +1069,20 @@ function toggleHelp(force) {
 
 function startMatch(opts = {}) {
   const career = !!opts.career;
-  if (!career && twoPlayer() && !input.bothJoined()) return;
+  const online = net ? net.role : null;
+  if (online === 'guest' && opts.online !== 'guest') return; // only the host kicks off
+  if (!career && !online && twoPlayer() && !input.bothJoined()) return;
   sfx.init();
   const kits = resolveKits(sel.user, sel.ai);
-  const matchMode = career ? '1p' : sel.mode;
+  const matchMode = online ? 'versus' : career ? '1p' : sel.mode;
   game.setupMatch({
     userClub: sel.user, aiClub: sel.ai, kits, difficulty: sel.diff, minutes: sel.len,
     matchMode, pads: input.slots.map((s) => s.padIndex),
     allowDraw: !!opts.allowDraw,
   });
+  if (online === 'host') {
+    net.hostBeginMatch({ user: toPlain(sel.user), ai: toPlain(sel.ai), diff: sel.diff, len: sel.len });
+  }
   $('sb-home').textContent = sel.user.short;
   $('sb-away').textContent = sel.ai.short;
   badgeStyle($('sb-home-badge'), sel.user);
@@ -777,8 +1091,11 @@ function startMatch(opts = {}) {
   hud.setScore(0, 0);
   const d = DIFFICULTY[sel.diff];
   const bandLabel = career ? (sel.user.band || '').toUpperCase() : '';
-  $('sb-diff').textContent = career ? `${bandLabel} · ${d.short}` : sel.mode === 'versus' ? '2P' : sel.mode === 'coop' ? 'CO-OP' : d.short;
-  $('pause-diff').textContent = career ? `Career ${bandLabel} · ${d.label}` : sel.mode === 'versus' ? 'Two Player' : sel.mode === 'coop' ? `Co-op · ${d.label}` : d.label;
+  $('sb-diff').textContent = online ? 'ONLINE' : career ? `${bandLabel} · ${d.short}` : sel.mode === 'versus' ? '2P' : sel.mode === 'coop' ? 'CO-OP' : d.short;
+  $('pause-diff').textContent = online ? 'Online match' : career ? `Career ${bandLabel} · ${d.label}` : sel.mode === 'versus' ? 'Two Player' : sel.mode === 'coop' ? `Co-op · ${d.label}` : d.label;
+  guestPauseShown = false;
+  $('btn-subs')?.classList.toggle('hidden', online === 'guest');
+  $('btn-ht-subs')?.classList.toggle('hidden', online === 'guest');
   $('playercard2')?.classList.toggle('hidden', matchMode !== 'versus' && matchMode !== 'coop');
   $('menu').classList.add('hidden');
   hideCareerOverlays();
@@ -809,6 +1126,7 @@ function startMatch(opts = {}) {
 }
 
 function leaveMatch() {
+  net?.endMatch();
   mode = 'menu';
   game.state = 'idle';
   game.celebration = null;
@@ -845,6 +1163,11 @@ function leaveMatch() {
 }
 
 function toMenu() {
+  if (isHost() && mode === 'match') net.send({ t: 'tomenu' });
+  if (isGuest() && mode === 'match') {
+    // A guest leaving the match leaves the online game.
+    leaveOnline();
+  }
   leaveMatch();
   inCareerMatch = false;
   hideCareerOverlays();
@@ -859,8 +1182,9 @@ function toMenu() {
 
 function syncFtButtons() {
   const career = inCareerMatch;
-  $('btn-rematch')?.classList.toggle('hidden', career);
+  $('btn-rematch')?.classList.toggle('hidden', career || isGuest());
   $('btn-menu')?.classList.toggle('hidden', career);
+  $('btn-menu').textContent = isGuest() ? 'Leave online game' : 'Change teams';
   $('btn-ft-continue')?.classList.toggle('hidden', !career);
 }
 
@@ -1429,10 +1753,18 @@ $('btn-start').onclick = startMatch;
 $('btn-controls').onclick = () => toggleHelp(true);
 $('btn-trainer').onclick = () => openTrainer();
 $('btn-help-close').onclick = () => toggleHelp(false);
-$('btn-resume').onclick = () => setPaused(false);
+$('btn-resume').onclick = () => {
+  if (isGuest()) net.send({ t: 'req', what: 'pause' });
+  else setPaused(false);
+};
 $('btn-subs')?.addEventListener('click', () => openSubs('pause'));
 $('btn-ht-subs')?.addEventListener('click', () => openSubs('half'));
-$('btn-second-half')?.addEventListener('click', () => {
+$('btn-second-half')?.addEventListener('click', (e) => {
+  if (isGuest()) {
+    net.send({ t: 'req', what: 'secondHalf' });
+    e.stopImmediatePropagation();
+    return;
+  }
   game.continueHalf = true;
   $('halftime')?.classList.add('hidden');
 });
@@ -2224,6 +2556,10 @@ function handleUI() {
       else if (crNewOpen || crHubOpen) toMenu();
       else if (mode === 'match' && game.state !== 'fulltime') openQuitConfirm();
     }
+    if (code === 'KeyP' && isGuest() && mode === 'match' && game.state !== 'fulltime') {
+      net.send({ t: 'req', what: 'pause' });
+      continue;
+    }
     if (code === 'KeyP' && mode === 'match' && game.state !== 'fulltime' && !quitOpen && !reconnecting) {
       if (helpOpen) toggleHelp(false);
       else if (subsOpen) closeSubs();
@@ -2251,14 +2587,15 @@ function frame(now) {
     const inp = input.frame(forward, right, {
       play,
       menu,
-      join: (mode === 'menu' && twoPlayer()) || reconnecting,
-      hasBallAt: (i) => !!game.humanHasBallAt?.(i),
+      join: (mode === 'menu' && twoPlayer() && !net) || reconnecting,
+      // Online, the guest plays the second human on the host's match.
+      hasBallAt: (i) => !!game.humanHasBallAt?.(isGuest() ? 1 : i),
       dt,
     });
     handleUI();
     handlePadMenu();
     if (mode === 'match') syncHalfTime();
-    if (mode === 'menu' && twoPlayer()) updateJoinUI();
+    if (mode === 'menu' && twoPlayer() && !net) updateJoinUI();
     if (inp.joinEvent?.reclaimed && reconnecting) {
       reconnecting = false;
       paused = false;
@@ -2270,7 +2607,14 @@ function frame(now) {
     }
     if (game.syncPads) game.syncPads(inp.slots);
 
-    if (mode === 'match' && !paused && !helpOpen && !quitOpen && !reconnecting) {
+    const netNow = performance.now() / 1000;
+    if (isGuest() && mode === 'match') {
+      // The guest draws the host's match and sends its controller; it never simulates.
+      if (net.guestApply(netNow)) $('sb-clock').textContent = fmtClock(game.clock ?? 0);
+      net.sendInput(play ? inp.slots?.[0] : null, netNow);
+      syncGuestPause();
+    } else if (mode === 'match' && !paused && !helpOpen && !quitOpen && !reconnecting) {
+      if (isHost() && inp.slots?.length > 1) inp.slots[1] = net.remoteFrame();
       let acc = Math.min(raw, 0.1);
       let step = inp;
       let steps = 0;
@@ -2288,6 +2632,8 @@ function frame(now) {
       }
       $('sb-clock').textContent = fmtClock(game.clock ?? 0);
     }
+    if (isHost() && mode === 'match') net.hostTick(netNow, { paused: paused || quitOpen || subsOpen });
+    updateOnlineBadge();
     if (mode === 'match') {
       game.syncVisuals(dt);
       updatePlayerCard();

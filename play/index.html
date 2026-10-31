@@ -109,6 +109,15 @@
           </button>
         </div>
         <button type="button" id="btn-coop" class="coop-link hidden">Both vs AI instead (co-op)</button>
+        <div id="online-row" class="online-row hidden">
+          <span class="online-label">Play online on two computers:</span>
+          <button type="button" class="ghost" id="btn-online-host">Host a game</button>
+          <button type="button" class="ghost" id="btn-online-join">Join with a code</button>
+        </div>
+        <div id="online-chip" class="online-chip hidden">
+          <span class="dot"></span><span id="online-chip-text">Online</span>
+          <button type="button" class="ghost" id="btn-online-leave">Leave</button>
+        </div>
         <div id="join-row" class="join-row hidden">
           <div class="join-slot p1" id="join-p1">P1: press A to join</div>
           <div class="join-slot p2" id="join-p2">P2: press A to join</div>
@@ -272,6 +281,39 @@
         </div>
       </div>
     </div>
+
+    <div id="online" class="overlay hidden">
+      <div class="pause-inner online-inner">
+        <h2 id="online-title">Play online</h2>
+        <div id="online-host" class="online-view hidden">
+          <p class="tip">Tell your friend this code. They open the game, choose <b>Two Player → Join with a code</b> and type it in.</p>
+          <div class="online-code" id="online-code">·····</div>
+          <button type="button" class="ghost" id="btn-online-copy">Copy code</button>
+        </div>
+        <div id="online-join" class="online-view hidden">
+          <p class="tip">Type the code shown on your friend's screen.</p>
+          <input id="online-code-input" type="text" maxlength="7" autocomplete="off" spellcheck="false" placeholder="K7Q2M" />
+          <button type="button" class="primary" id="btn-online-connect">Join</button>
+        </div>
+        <div id="online-guest" class="online-view hidden">
+          <p class="tip" id="online-guest-picks">Connected! The host is picking the match.</p>
+          <h3 class="trainer-h">Your club</h3>
+          <div class="club-grid" id="online-guest-grid"></div>
+        </div>
+        <p id="online-status" class="online-status"></p>
+        <button type="button" class="ghost" id="btn-online-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <div id="online-notice" class="overlay hidden">
+      <div class="pause-inner">
+        <h2 id="online-notice-title">Opponent disconnected</h2>
+        <p class="tip" id="online-notice-text">The online game has ended.</p>
+        <button type="button" class="primary" id="btn-online-notice-ok">Back to menu</button>
+      </div>
+    </div>
+
+    <div id="online-badge" class="online-badge hidden"></div>
 
     <div id="trainer" class="overlay hidden">
       <div class="dream-inner trainer-inner">
