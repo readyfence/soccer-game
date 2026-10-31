@@ -12,6 +12,7 @@ import { Sfx } from './audio.js';
 import { Commentary } from './commentary.js';
 import { Game } from './game.js';
 import { OnlineSession } from './online.js';
+import { MODEL_STATE_SIZE } from './playerModel.js';
 import { hostGame, joinGame } from './netlink.js';
 import { normalizeCode, toPlain } from './netcode.js';
 import { statLine, ratingTier } from './ratings.js';
@@ -398,6 +399,8 @@ const hud = {
 };
 
 const game = new Game({ scene, renderer, stadium, ball, sfx, hud });
+// Dev server only (stripped from builds): lets browser tests read the match state.
+if (import.meta.env?.DEV) window.__socker = { game, get net() { return net; } };
 
 // ------------------------------------------------------------------ menu
 
@@ -455,7 +458,8 @@ function setMode(mode, persist = true) {
   $('grid-ai')?.closest('.side')?.classList.toggle('p2-side', sel.mode === 'versus');
   const diffWrap = document.querySelector('.opt-diff-wrap');
   if (diffWrap) diffWrap.classList.toggle('hidden', sel.mode === 'versus');
-  input.setPlayMode(mode === '1p' ? '1p' : mode);
+  // Online, each computer drives one player with the one-player controls.
+  input.setPlayMode(net ? '1p' : mode === '1p' ? '1p' : mode);
   updateJoinUI();
   updateKickoffBtn();
   if (typeof menuNav !== 'undefined') menuNav.modeCard = twoPlayer() ? 'versus' : '1p';
@@ -822,7 +826,7 @@ function sendLobby() {
 
 function startOnlineSession(link, role) {
   net = new OnlineSession({
-    link, role, game, hud, sfx, stadium,
+    link, role, game, hud, sfx, stadium, modelStateSize: MODEL_STATE_SIZE,
     onMessage: onOnlineMessage,
     onClose: () => onOnlineClosed(),
   });
@@ -1075,14 +1079,16 @@ function startMatch(opts = {}) {
   sfx.init();
   const kits = resolveKits(sel.user, sel.ai);
   const matchMode = online ? 'versus' : career ? '1p' : sel.mode;
+  // Online, the guest is told to build the match first, so the kick-off commentary and
+  // whistle that setupMatch triggers are forwarded after it.
+  if (online === 'host') {
+    net.hostBeginMatch({ user: toPlain(sel.user), ai: toPlain(sel.ai), diff: sel.diff, len: sel.len });
+  }
   game.setupMatch({
     userClub: sel.user, aiClub: sel.ai, kits, difficulty: sel.diff, minutes: sel.len,
     matchMode, pads: input.slots.map((s) => s.padIndex),
     allowDraw: !!opts.allowDraw,
   });
-  if (online === 'host') {
-    net.hostBeginMatch({ user: toPlain(sel.user), ai: toPlain(sel.ai), diff: sel.diff, len: sel.len });
-  }
   $('sb-home').textContent = sel.user.short;
   $('sb-away').textContent = sel.ai.short;
   badgeStyle($('sb-home-badge'), sel.user);

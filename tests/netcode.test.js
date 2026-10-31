@@ -62,7 +62,10 @@ test('guest input packs moves, holds and taps; host consumes taps once', () => {
 test('snapshots survive JSON and reject bad input', () => {
   const players = new Float32Array([1.23456, 0, -3.5, 1.5707963, 0.5]);
   const enc = N.encodeSnapshot({ seq: 7, t: 12.3456789, players, ball: [0, 0.11, 0, 0, 0, 0, 1], meta: { st: 'play' } });
-  const dec = N.decodeSnapshot(JSON.parse(JSON.stringify(enc)));
+  // Sent as { t: 'snap', ...enc }: the snapshot must not clobber the message type.
+  const msg = JSON.parse(JSON.stringify({ t: 'snap', ...enc }));
+  assert.equal(msg.t, 'snap');
+  const dec = N.decodeSnapshot(msg);
   assert.equal(dec.seq, 7);
   assert.equal(dec.t, 12.346);
   assert.deepEqual(dec.p, [1.235, 0, -3.5, 1.571, 0.5]);

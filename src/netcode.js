@@ -110,7 +110,7 @@ export function encodeSnapshot({ seq, t, players, ball, meta }) {
   return {
     v: PROTOCOL,
     n: seq,
-    t: q(t, 1000),
+    at: q(t, 1000), // not `t`: messages use `t` for their type
     p: Array.from(players ?? [], (v) => q(v, 1000)),
     b: Array.from(ball ?? [], (v) => q(v, 10000)),
     m: meta ?? {},
@@ -119,8 +119,8 @@ export function encodeSnapshot({ seq, t, players, ball, meta }) {
 
 export function decodeSnapshot(msg) {
   if (!msg || msg.v !== PROTOCOL || !Array.isArray(msg.p) || !Array.isArray(msg.b) || msg.b.length < 7) return null;
-  if (!Number.isFinite(msg.t) || !Number.isFinite(msg.n)) return null;
-  return { seq: msg.n, t: msg.t, p: msg.p, b: msg.b, meta: msg.m && typeof msg.m === 'object' ? msg.m : {} };
+  if (!Number.isFinite(msg.at) || !Number.isFinite(msg.n)) return null;
+  return { seq: msg.n, t: msg.at, p: msg.p, b: msg.b, meta: msg.m && typeof msg.m === 'object' ? msg.m : {} };
 }
 
 // Keeps recent snapshots in order and picks the pair to draw between.

@@ -14,15 +14,13 @@ import {
   PROTOCOL, SNAPSHOT_HZ, RemoteInput, SnapshotBuffer, encodeInput, encodeSnapshot, decodeSnapshot,
   plainArgs, coalesceCalls, toPlain,
 } from './netcode.js';
-import { MODEL_STATE_SIZE } from './playerModel.js';
 
-// Same layout as the replay recorder in game.js: x, y, z, facing, then model state.
-const STRIDE = 4 + MODEL_STATE_SIZE;
-
-function captureFrame(g) {
-  const p = new Float32Array(g.players.length * STRIDE);
+// Same layout as the replay recorder in game.js: x, y, z, facing, then the model's
+// animation state (MODEL_STATE_SIZE numbers, passed in so this file needs no 3D code).
+function captureFrame(g, stride) {
+  const p = new Float32Array(g.players.length * stride);
   g.players.forEach((pl, i) => {
-    const o = i * STRIDE;
+    const o = i * stride;
     p[o] = pl.pos.x;
     p[o + 1] = pl.pos.y;
     p[o + 2] = pl.pos.z;
@@ -60,8 +58,9 @@ const HUD_ARGS = {
 };
 
 export class OnlineSession {
-  constructor({ link, role, game, hud, sfx, stadium, onMessage, onClose }) {
+  constructor({ link, role, game, hud, sfx, stadium, modelStateSize, onMessage, onClose }) {
     this.link = link;
+    this.stride = 4 + (modelStateSize ?? 0);
     this.role = role;
     this.game = game;
     this.real = { hud, sfx, stadium };
@@ -80,6 +79,7 @@ export class OnlineSession {
     this.lastInputKey = '';
     game._netSession = this;
     this.pingTimer = setInterval(() => this.send({ t: 'ping', at: performance.now() }), 2000);
+    this.pingTimer?.unref?.(); // node tests only; browsers return a plain number
     link.on('message', (msg) => this.receive(msg));
     link.on('close', (why) => {
       clearInterval(this.pingTimer);
@@ -222,7 +222,7 @@ export class OnlineSession {
     this.lastSnapAt = now;
     const g = this.game;
     if (!g.players?.length || !g.ball) return;
-    const frame = captureFrame(g);
+    const frame = captureFrame(g, this.stride);
     const idx = (p) => (p ? g.players.indexOf(p) : -1);
     const meta = {
       st: g.state,
