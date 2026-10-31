@@ -157,6 +157,7 @@
           </div>
           <button id="btn-controls" class="ghost">Controls</button>
           <button id="btn-start" class="primary">KICK OFF</button>
+          <button id="btn-trainer" class="ghost">Trainer</button>
         </div>
         <div id="menu-pad-hint">
           <span class="xb-dot a"></span> Confirm
@@ -246,6 +247,42 @@
         </div>
       </div>
     </div>
+
+    <div id="trainer" class="overlay hidden">
+      <div class="dream-inner trainer-inner">
+        <div class="dream-head">
+          <div>
+            <h2>Trainer</h2>
+            <p class="tip">Send a player to the handheld trainer. Train him with mini games and real practice, then sync him back here.</p>
+          </div>
+        </div>
+        <div class="trainer-link">
+          <label for="trainer-host">Trainer address</label>
+          <input id="trainer-host" type="text" spellcheck="false" autocomplete="off" placeholder="soccer-trainer.local" />
+          <span id="trainer-status" class="trainer-status">Not checked</span>
+          <button type="button" class="ghost" id="btn-trainer-check">Check</button>
+        </div>
+        <p class="tip trainer-steps">On the trainer, tap <b>LINK</b> first. Both devices need to be on the same Wi-Fi.</p>
+        <div class="dream-body trainer-body">
+          <div class="dream-pool">
+            <h3 class="trainer-h">Send a player</h3>
+            <input id="trainer-search" type="search" placeholder="Find a player — Mbappé, Saka, Pelé…" autocomplete="off" />
+            <div id="trainer-list" class="dream-list"></div>
+          </div>
+          <div class="dream-pool">
+            <h3 class="trainer-h">Trained players</h3>
+            <div id="trainer-trained" class="dream-list"></div>
+            <button type="button" class="primary" id="btn-trainer-sync">Sync from Trainer</button>
+            <p class="tip trainer-steps">Sync brings back whoever is on the trainer now, with all the stats he has earned.</p>
+          </div>
+        </div>
+        <div class="dream-actions">
+          <button type="button" class="primary" id="btn-trainer-done">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="trainer-toast" class="hidden"></div>
 
     <div id="help" class="overlay hidden">
       <div class="help-inner">

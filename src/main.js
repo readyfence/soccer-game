@@ -13,6 +13,11 @@ import { Commentary } from './commentary.js';
 import { Game } from './game.js';
 import { statLine, ratingTier } from './ratings.js';
 import { formMarkup, formView } from './form.js';
+import { appearanceFor } from './appearance.js';
+import {
+  withTraining, trainedList, trainedRecord, forgetTrained, trainerHost, setTrainerHost, sendPayload, sendUrl,
+  syncUrl, pingTrainer, consumeSyncFromLocation, deltaLabel,
+} from './trainer.js';
 import { Input, CONTROLS, P1_COLOR, P2_COLOR } from './input.js';
 import {
   TEAMS, NATIONS, DREAM, STAR_POOL, SLOT_LABELS, teamRating, resolveKits, shotTraits,
@@ -519,17 +524,17 @@ function clubInfo(club, side) {
   const top = club.kind === 'dream'
     ? SLOT_LABELS.map((lab, i) => {
       const name = club.draft?.[i] || '';
-      const pl = name && STAR_POOL.find((s) => s.name === name);
-      return { num: i + 1, name: name || `Draft ${lab}`, ovr: pl?.ovr ?? '—' };
+      const pl = name && withTraining(STAR_POOL.find((s) => s.name === name));
+      return { num: i + 1, name: name || `Draft ${lab}`, ovr: pl?.ovr ?? '—', trained: pl?.trained };
     })
-    : [...club.players].sort((a, b) => b.ovr - a.ovr).slice(0, 6);
+    : club.players.map(withTraining).sort((a, b) => b.ovr - a.ovr).slice(0, 6);
   const edit = club.kind === 'dream'
     ? `<button type="button" class="ghost dream-edit" data-side="${side}">Draft players</button>`
     : '';
   return `<div class="ci-head"><span class="badge" data-club="${club.id}"></span><div><div class="ci-title">${club.name}</div>
     <div>Team OVR <b>${teamRating(club)}</b> · Kit <span class="kit"><i style="background:${hex(k.shirt)}"></i><i style="background:${hex(k.shorts)}"></i><i style="background:${hex(k.socks)}"></i></span>
     GK <span class="kit"><i style="background:${hex(club.gk.shirt)}"></i></span></div></div></div>
-    <div class="stars">${top.map((p) => `<div><span>#${p.num} ${p.name}</span><b>${p.ovr}</b></div>`).join('')}</div>${edit}`;
+    <div class="stars">${top.map((p) => `<div><span>#${p.num} ${p.name}${trainedStar(p)}</span><b>${p.ovr}</b></div>`).join('')}</div>${edit}`;
 }
 
 function renderMenu() {
@@ -593,6 +598,7 @@ let mode = 'menu';
 let paused = false;
 let helpOpen = false;
 let dreamOpen = false;
+let trainerOpen = false;
 let quitOpen = false;
 let pausedBeforeQuit = false;
 let reconnecting = false;
@@ -683,7 +689,7 @@ function renderDream() {
   const pitch = $('dream-pitch');
   const list = $('dream-list');
   if (!pitch || !list) return;
-  const squad = dreamUI.names.map((name) => (name ? STAR_POOL.find((pl) => pl.name === name) : null));
+  const squad = dreamUI.names.map((name) => (name ? withTraining(STAR_POOL.find((pl) => pl.name === name)) : null));
   const filled = dreamUI.names.filter(Boolean).length;
   const ovr = filled ? Math.round(squad.reduce((a, pl) => a + (pl?.ovr || 0), 0) / filled) : 0;
   $('dream-ovr').textContent = filled < 11 ? `${filled}/11` : `OVR ${ovr}`;
@@ -706,12 +712,13 @@ function renderDream() {
   });
   const rows = filteredStars();
   list.innerHTML = '';
-  for (const { pl, taken } of rows) {
+  for (const { pl: raw, taken } of rows) {
+    const pl = withTraining(raw);
     const b = document.createElement('button');
     b.type = 'button';
     b.className = `drow${taken ? ' taken' : ''}${dreamUI.names[dreamUI.slot] === pl.name ? ' on' : ''}`;
     const era = pl.era === 'prime' ? 'PRIME' : pl.era === 'now' ? 'NOW' : 'ALL';
-    b.innerHTML = `<span class="dwho">${pl.name}</span><span class="dmeta">${pl.pos} · ${era}</span><span class="dstat">${pl.ovr}</span>`;
+    b.innerHTML = `<span class="dwho">${pl.name}${trainedStar(pl)}</span><span class="dmeta">${pl.pos} · ${era}</span><span class="dstat">${pl.ovr}</span>`;
     b.onclick = () => draftPlayer(pl.name);
     list.appendChild(b);
   }
@@ -742,6 +749,150 @@ $('btn-dream-reset')?.addEventListener('click', () => {
   renderDream();
 });
 $('btn-dream-done')?.addEventListener('click', () => closeDream());
+
+// ------------------------------------------------------------------ trainer
+
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+})[c]);
+
+function trainedStar(pl) {
+  return pl?.trained ? '<span class="trained-star" title="Trained on the handheld trainer">★</span>' : '';
+}
+
+const trainerUI = { query: '' };
+
+function gameUrl() {
+  return `${location.origin}${location.pathname}${location.search}`;
+}
+
+function openTrainer() {
+  trainerOpen = true;
+  $('trainer-host').value = trainerHost();
+  $('trainer-search').value = trainerUI.query;
+  $('trainer').classList.remove('hidden');
+  renderTrainer();
+  setOverlayFocus('trainer', 1);
+  checkTrainer();
+}
+
+function closeTrainer() {
+  if (!trainerOpen) return;
+  setTrainerHost($('trainer-host').value);
+  trainerOpen = false;
+  $('trainer').classList.add('hidden');
+  renderMenu();
+}
+
+async function checkTrainer() {
+  const el = $('trainer-status');
+  setTrainerHost($('trainer-host').value);
+  el.className = 'trainer-status';
+  if (location.protocol === 'https:') {
+    el.textContent = 'Can’t check from https — just try Send';
+    el.classList.add('warn');
+    return;
+  }
+  el.textContent = 'Looking…';
+  const info = await pingTrainer();
+  if (!trainerOpen) return;
+  if (info?.ok) {
+    el.textContent = info.player ? `Connected · ${info.player} is training` : 'Connected · no player yet';
+    el.classList.add('ok');
+  } else {
+    el.textContent = 'Not found — tap LINK on the trainer';
+    el.classList.add('warn');
+  }
+}
+
+function teamFor(pl) {
+  const want = pl.era === 'prime' ? 'prime' : null;
+  return TEAMS.find((t) => t.short === pl.club && (!want || t.kind === want))
+    || TEAMS.find((t) => t.short === pl.club)
+    || null;
+}
+
+function sendToTrainer(pl) {
+  setTrainerHost($('trainer-host').value);
+  const payload = sendPayload(pl, { team: teamFor(pl), look: appearanceFor(pl.name), ret: gameUrl() });
+  location.href = sendUrl(payload);
+}
+
+function syncFromTrainer() {
+  setTrainerHost($('trainer-host').value);
+  location.href = syncUrl(gameUrl());
+}
+
+function renderTrainer() {
+  const list = $('trainer-list');
+  list.innerHTML = '';
+  const rows = STAR_POOL.filter((pl) => starMatches(pl, trainerUI.query)).slice(0, 80);
+  for (const raw of rows) {
+    const pl = withTraining(raw);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'drow';
+    b.innerHTML = `<span class="dwho">${escHtml(pl.name)}${trainedStar(pl)}</span>`
+      + `<span class="dmeta">${escHtml(pl.pos)} · ${escHtml(pl.club || '')}</span>`
+      + `<span class="dstat">${pl.ovr}</span><span class="dsend">SEND</span>`;
+    b.onclick = () => sendToTrainer(raw);
+    list.appendChild(b);
+  }
+  if (!rows.length) list.innerHTML = '<p class="tip">No players match that search.</p>';
+
+  const trained = $('trainer-trained');
+  trained.innerHTML = '';
+  for (const rec of trainedList()) {
+    const row = document.createElement('div');
+    row.className = 'drow trow';
+    const when = rec.at ? new Date(rec.at).toLocaleDateString() : '';
+    const coach = rec.coach ? `Coach ${escHtml(rec.coach)} · ` : '';
+    const steps = rec.log?.steps ? ` · ${rec.log.steps.toLocaleString()} steps` : '';
+    row.innerHTML = `<span class="dwho">${escHtml(rec.name)}<span class="trained-star">★</span></span>`
+      + `<span class="dmeta">${coach}${when}</span>`
+      + '<button type="button" class="dforget">Forget</button>'
+      + `<span class="dgain">${escHtml(deltaLabel(rec.train || []))} · OVR +${rec.train?.[4] ?? 0}${steps}</span>`;
+    row.querySelector('.dforget').onclick = () => {
+      if (!window.confirm(`Remove ${rec.name}'s training from this game? The trainer keeps its copy.`)) return;
+      forgetTrained(rec.name);
+      renderTrainer();
+    };
+    trained.appendChild(row);
+  }
+  if (!trained.children.length) {
+    trained.innerHTML = '<p class="tip">Nobody yet. Send a player, train him on the device, then press Sync.</p>';
+  }
+}
+
+function showSyncResult(res) {
+  if (!res) return;
+  const el = $('trainer-toast');
+  el.classList.remove('err');
+  if (res.error) {
+    el.textContent = res.error;
+    el.classList.add('err');
+  } else {
+    const gained = res.gained.slice(0, 4).some((v) => v > 0) ? deltaLabel(res.gained) : 'No new gains since last sync';
+    const total = trainedRecord(res.name)?.train?.[4] ?? 0;
+    el.innerHTML = `${escHtml(res.name)} is back from training!`
+      + `<span class="tt-sub">${escHtml(gained)} · OVR +${total} overall</span>`;
+  }
+  el.classList.remove('hidden');
+  const hide = () => el.classList.add('hidden');
+  el.onclick = hide;
+  clearTimeout(showSyncResult.t);
+  showSyncResult.t = setTimeout(hide, 7000);
+  renderMenu();
+}
+
+$('trainer-search')?.addEventListener('input', (e) => {
+  trainerUI.query = e.target.value;
+  renderTrainer();
+});
+$('trainer-host')?.addEventListener('change', () => checkTrainer());
+$('btn-trainer-check')?.addEventListener('click', () => checkTrainer());
+$('btn-trainer-sync')?.addEventListener('click', () => syncFromTrainer());
+$('btn-trainer-done')?.addEventListener('click', () => closeTrainer());
 
 function toggleHelp(force) {
   helpOpen = force ?? !helpOpen;
@@ -1175,6 +1326,7 @@ function confirmQuit() {
 
 $('btn-start').onclick = startMatch;
 $('btn-controls').onclick = () => toggleHelp(true);
+$('btn-trainer').onclick = () => openTrainer();
 $('btn-help-close').onclick = () => toggleHelp(false);
 $('btn-resume').onclick = () => setPaused(false);
 $('btn-subs')?.addEventListener('click', () => openSubs('pause'));
@@ -1223,6 +1375,7 @@ function setOverlayFocus(name, idx) {
 }
 
 function overlayButtons() {
+  if (trainerOpen) return ['btn-trainer-sync', 'btn-trainer-done'];
   if (dreamOpen) return ['btn-dream-best', 'btn-dream-reset', 'btn-dream-done'];
   if (helpOpen) return ['btn-help-close'];
   if (quitOpen) return ['btn-quit-cancel', 'btn-quit-yes'];
@@ -1236,7 +1389,7 @@ function overlayButtons() {
 }
 
 function paintOverlayFocus() {
-  for (const id of ['btn-help-close', 'btn-resume', 'btn-subs', 'btn-quit', 'btn-quit-cancel', 'btn-quit-yes', 'btn-rematch', 'btn-menu', 'btn-ft-continue', 'btn-second-half', 'btn-ht-subs', 'btn-sub-confirm', 'btn-sub-close', 'btn-dream-best', 'btn-dream-reset', 'btn-dream-done']) {
+  for (const id of ['btn-help-close', 'btn-resume', 'btn-subs', 'btn-quit', 'btn-quit-cancel', 'btn-quit-yes', 'btn-rematch', 'btn-menu', 'btn-ft-continue', 'btn-second-half', 'btn-ht-subs', 'btn-sub-confirm', 'btn-sub-close', 'btn-dream-best', 'btn-dream-reset', 'btn-dream-done', 'btn-trainer-sync', 'btn-trainer-done']) {
     $(id)?.classList.remove('pad-focus');
   }
   const ids = overlayButtons();
@@ -1255,7 +1408,8 @@ function activateOverlay() {
 
 function overlayBack() {
   input.latchMenu();
-  if (dreamOpen) closeDream();
+  if (trainerOpen) closeTrainer();
+  else if (dreamOpen) closeDream();
   else if (helpOpen) toggleHelp(false);
   else if (quitOpen) closeQuitConfirm();
   else if (subsOpen) closeSubs();
@@ -1385,6 +1539,7 @@ const OPTS = [
   { id: 'opt-gfx', key: 'gfx', parse: (v) => v },
   { id: 'btn-controls' },
   { id: 'btn-start' },
+  { id: 'btn-trainer' },
 ];
 
 function activeOpts() {
@@ -1406,7 +1561,7 @@ function applyMenuFocus() {
     paintWcFocus();
     return;
   }
-  if (mode !== 'menu' || helpOpen || dreamOpen) {
+  if (mode !== 'menu' || helpOpen || dreamOpen || trainerOpen) {
     paintOverlayFocus();
     return;
   }
@@ -1525,7 +1680,7 @@ function handlePadMenu() {
     handleWcHubPad(m);
     return;
   }
-  const blocking = helpOpen || dreamOpen || quitOpen || subsOpen || (paused && !reconnecting)
+  const blocking = helpOpen || dreamOpen || trainerOpen || quitOpen || subsOpen || (paused && !reconnecting)
     || !$('fulltime').classList.contains('hidden') || !$('halftime')?.classList.contains('hidden');
   if (subsOpen && (m.lb || m.rb) && game.matchMode === 'versus') {
     subUI.team = m.rb ? 1 : 0;
@@ -1793,7 +1948,7 @@ function clamp01(v) {
 function fillCard(prefix, p) {
   const d = p.data;
   $(`${prefix}-num`).textContent = d.num;
-  $(`${prefix}-name`).textContent = d.name;
+  $(`${prefix}-name`).textContent = d.trained ? `${d.name} ★` : d.name;
   const { lon, fin } = shotTraits(d);
   $(`${prefix}-stats`).innerHTML = `<span>SHO <b>${d.sho}</b></span><span>LON <b>${lon}</b></span><span>FIN <b>${fin}</b></span><span>PAS <b>${d.pas}</b></span>`;
   $(`${prefix}-ovr`).textContent = d.ovr;
@@ -1953,7 +2108,8 @@ function handleUI() {
       commentary.setMuted(muted);
     }
     if (code === 'Escape') {
-      if (helpOpen) toggleHelp(false);
+      if (trainerOpen) closeTrainer();
+      else if (helpOpen) toggleHelp(false);
       else if (subsOpen) closeSubs();
       else if (quitOpen) closeQuitConfirm();
       else if (wcPickOpen || wcHubOpen) toMenu();
@@ -2051,4 +2207,5 @@ function frame(now) {
 renderMenu();
 setMode(sel.mode, false);
 $('loading').classList.add('hidden');
+showSyncResult(consumeSyncFromLocation());
 requestAnimationFrame(frame);
