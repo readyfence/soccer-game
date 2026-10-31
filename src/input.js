@@ -10,7 +10,7 @@ const PREVENT = new Set(['Tab', 'Space', 'Slash', 'Enter', 'NumpadEnter', 'Numpa
 
 const FULL_ACTIONS = {
   Space: 'shot', KeyF: 'finesse', KeyR: 'power', KeyC: 'chip', KeyB: 'bicycle', KeyE: 'pass', KeyQ: 'through',
-  KeyX: 'cross', KeyV: 'clear', KeyK: 'tackle', KeyL: 'slide', Tab: 'switch', Enter: 'skip',
+  KeyX: 'cross', KeyV: 'clear', KeyK: 'tackle', KeyL: 'slide', KeyJ: 'dive', Tab: 'switch', Enter: 'skip',
 };
 const FULL_MOVE = {
   KeyW: [0, 1], ArrowUp: [0, 1], KeyS: [0, -1], ArrowDown: [0, -1],
@@ -20,12 +20,13 @@ const FULL_SPRINT = new Set(['ShiftLeft', 'ShiftRight']);
 const FULL_FINESSE = new Set(['ControlLeft', 'ControlRight']);
 
 const P1_MOVE = { KeyW: [0, 1], KeyS: [0, -1], KeyA: [-1, 0], KeyD: [1, 0] };
-const P1_ACTIONS = { Space: 'shot', KeyF: 'pass', KeyG: 'through', KeyC: 'chip', KeyB: 'bicycle', KeyQ: 'util' };
+const P1_ACTIONS = { Space: 'shot', KeyF: 'pass', KeyG: 'through', KeyC: 'chip', KeyB: 'bicycle', KeyQ: 'util', KeyJ: 'dive' };
 const P2_MOVE = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 const P2_ACTIONS = {
   Enter: 'shot', NumpadEnter: 'shot', KeyK: 'pass', Numpad1: 'pass',
   KeyL: 'through', Numpad2: 'through', Semicolon: 'chip', Numpad3: 'chip',
   Period: 'bicycle', Numpad4: 'bicycle', Slash: 'util', Numpad0: 'util',
+  Quote: 'dive',
 };
 
 export const CONTROLS = {
@@ -41,10 +42,12 @@ export const CONTROLS = {
     ['Q (hold)', 'Through ball / lofted throw'],
     ['X (hold)', 'Cross'],
     ['V (hold)', 'Clearance'],
+    ['Pens stress', 'High pressure wobbles the aim ring and shrinks the power sweet spot — don’t hesitate'],
   ],
   defend: [
     ['K', 'Standing tackle'],
     ['L', 'Slide tackle'],
+    ['J', 'Dive (penalties — aim stick left / right / up)'],
     ['Tab', 'Switch player (GK in 1v1s)'],
     ['L3', 'Toggle camera'],
     ['H / View', 'Controls'],
@@ -64,7 +67,8 @@ export const CONTROLS = {
     ['LB + B', 'Chip'],
     ['LT + Y', 'Bicycle kick (volley)'],
     ['A', 'Pass · throw-in · defend: standing tackle'],
-    ['X', 'Through · defend: slide'],
+    ['X', 'Through · defend: slide · pens: dive (aim with stick)'],
+    ['Pens stress', 'Release in the white sweet spot; high stress wobbles the aim'],
     ['Y', 'Cross · defend: clearance'],
     ['R3 or LB tap', 'Switch player (GK in 1v1s)'],
     ['L3', 'Camera'],
@@ -82,6 +86,7 @@ export const CONTROLS = {
     ['C', 'Chip'],
     ['B', 'Bicycle kick (air)'],
     ['Q', 'Tackle (defend) · Switch'],
+    ['J', 'Dive (penalties — aim with WASD)'],
   ],
   p2kb: [
     ['Arrows', 'Move'],
@@ -92,6 +97,7 @@ export const CONTROLS = {
     ['; or Numpad 3', 'Chip'],
     ['. or Numpad 4', 'Bicycle kick (air)'],
     ['/ or Numpad 0', 'Tackle (defend) · Switch'],
+    ["' (quote)", 'Dive (penalties — aim with arrows)'],
   ],
 };
 
@@ -353,7 +359,10 @@ export class Input {
   }
 
   latchMenu() {
-    for (const s of this.slots) s.menuLatch = true;
+    for (const s of this.slots) {
+      s.menuLatch = true;
+      s.clearActions();
+    }
   }
 
   pollJoin(gp, st) {
@@ -485,6 +494,7 @@ export class Input {
       if (faces.every((i) => !this.pressedNow(gp, i))) slot.menuLatch = false;
       else return this.sticks(gp);
     }
+    slot._padHeld = slot._padHeld ?? new Set();
     const lt = this.pressedNow(gp, BTN.LT, 0.35);
     const rb = this.pressedNow(gp, BTN.RB);
     const lb = this.pressedNow(gp, BTN.LB);
@@ -497,10 +507,19 @@ export class Input {
         st.action[i] = null;
         if (a) slot.release(a);
       }
+      // Only mark pad-originated holds. Copying every slot.down action into
+      // _padHeld (including Space/E) made keyboard shot/pass never release.
+      if (st.action[i]) slot._padHeld.add(st.action[i]);
     };
     bind(BTN.A, hasBall ? 'pass' : 'tackle');
     bind(BTN.B, lt ? 'finesse' : rb ? 'power' : lb ? (st.lbMod = true, 'chip') : 'shot');
     bind(BTN.X, hasBall ? 'through' : 'slide');
+    if (!hasBall) {
+      if (st.rise[BTN.X]) {
+        slot.hold('dive');
+        slot._padHeld.add('dive');
+      } else if (st.fall[BTN.X]) slot.release('dive');
+    }
     bind(BTN.Y, lt ? 'bicycle' : hasBall ? 'cross' : 'clear');
     bind(BTN.R3, 'switch');
     if (st.rise[BTN.LB]) st.lbMod = false;
@@ -629,7 +648,6 @@ export class Input {
       slot._padHeld = new Set();
       if (play && gp) {
         stick = this.pollPlayPad(gp, slot, hasBallAt(i)) || stick;
-        for (const a of slot.down) slot._padHeld.add(a);
       }
       const scheme = this.playMode === '1p' ? 'full' : slot.kb;
       if (play && (scheme === 'full' || scheme === 'p1' || scheme === 'p2')) {

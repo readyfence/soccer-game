@@ -26,3 +26,23 @@ export function celebrationFor(player) {
   if (player.celebration && CELEBRATIONS[player.celebration]) return CELEBRATIONS[player.celebration];
   return GENERIC[(Math.random() * GENERIC.length) | 0];
 }
+
+const LONG_PEN_CELE = new Set(['siuu', 'zen', 'prayer', 'iceSlide', 'dance']);
+
+/** Pose-only cele for penalties — no run to the corner or replay-length slide. */
+export function shortCelebrationFor(player) {
+  const full = celebrationFor(player);
+  const id = player?.celebration;
+  if (id && CELEBRATIONS[id] && !LONG_PEN_CELE.has(id)) {
+    return {
+      ...full,
+      run: 0,
+      slide: false,
+      runPose: full.pose,
+      popupAt: Math.min(full.popupAt ?? 0.2, 0.25),
+    };
+  }
+  const shorts = [POSE.ARMS_UP, POSE.AIRPLANE, POSE.CLAP];
+  const pose = shorts[(Math.random() * shorts.length) | 0];
+  return { label: 'Celebrate', run: 0, slide: false, pose, runPose: pose, popup: null, popupAt: 0.18 };
+}

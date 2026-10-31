@@ -3,17 +3,27 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { HALF_L, HALF_W } from './constants.js';
 import { buildStadium } from './stadium.js';
 import { Ball } from './ball.js';
 import { Sfx } from './audio.js';
+import { Commentary } from './commentary.js';
 import { Game } from './game.js';
+import { statLine, ratingTier } from './ratings.js';
+import { formMarkup, formView } from './form.js';
 import { Input, CONTROLS, P1_COLOR, P2_COLOR } from './input.js';
 import {
-  TEAMS, DREAM, STAR_POOL, SLOT_LABELS, teamRating, resolveKits, shotTraits,
+  TEAMS, NATIONS, DREAM, STAR_POOL, SLOT_LABELS, teamRating, resolveKits, shotTraits,
   setDreamPlayers, autoDreamNames, emptyDraft, naturalSlots, starMatches, draftedCount,
 } from './teams.js';
 import { DIFFICULTY, resolveDifficulty } from './constants.js';
+import {
+  loadCup, saveCup, clearCup, createCup, wcNations, findNation,
+  nextUserMatch, finishUserMatch, userStatus, groupTables, describePhase,
+  groupsComplete, matchLabel, bracketRounds, roundName, GROUPS,
+} from './worldcup.js';
 
 const $ = (id) => document.getElementById(id);
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
@@ -41,6 +51,32 @@ const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerH
 camera.position.set(0, 30, 60);
 
 const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.5, 0.88);
+// Runs on linear HDR before OutputPass tone maps it.
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    varying vec2 vUv;
+    void main() {
+      vec3 col = texture2D(tDiffuse, vUv).rgb;
+      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = max(mix(vec3(luma), col, 1.06), 0.0);
+      col *= vec3(1.02, 1.0, 0.97);
+      vec2 d = vUv - 0.5;
+      col *= 1.0 - smoothstep(0.35, 0.95, length(d * vec2(1.25, 1.0))) * 0.45;
+      float n = fract(sin(dot(vUv * 1000.0 + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+      col *= 1.0 + n * 0.025;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+const smaa = new SMAAPass();
 let composer = null;
 try {
   const rt = new THREE.WebGLRenderTarget(1, 1, {
@@ -51,7 +87,9 @@ try {
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(bloom);
+  composer.addPass(grade);
   composer.addPass(new OutputPass());
+  composer.addPass(smaa);
 } catch (err) {
   console.warn('Postprocessing unavailable, using WebGL renderer', err);
 }
@@ -81,12 +119,14 @@ if (isSafari) {
 }
 let qLevel = isSafari ? 2 : 0;
 let qAuto = true;
+smaa.enabled = QUALITY[qLevel].samples === 0;
 function applyQuality(level) {
   qLevel = level;
   const q = QUALITY[level];
   renderer.setPixelRatio(q.ratio);
   composer?.setPixelRatio(q.ratio);
   bloom.enabled = q.bloom && !!composer;
+  smaa.enabled = q.samples === 0;
   for (const t of [composer?.renderTarget1, composer?.renderTarget2]) {
     if (t && t.samples !== q.samples) {
       t.samples = q.samples;
@@ -176,6 +216,23 @@ function makeSwitchMark(color) {
 const switchMark = makeSwitchMark(0xe8eef8);
 const switchMark2 = makeSwitchMark(0xffb0b0);
 
+function makePenReticle() {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+  });
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.27, 32), mat);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), mat);
+  ring.renderOrder = dot.renderOrder = 10;
+  g.add(ring, dot);
+  g.rotation.y = Math.PI / 2;
+  g.visible = false;
+  g.userData.mat = mat;
+  scene.add(g);
+  return g;
+}
+const penReticle = makePenReticle();
+
 // ------------------------------------------------------------------ HUD
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -187,9 +244,45 @@ function badgeStyle(el, club) {
   el.textContent = club.short;
 }
 
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const ratingBadge = (r, cls = '') => `<span class="rating ${ratingTier(r)} ${cls}">${r.toFixed(1)}</span>`;
+const posOf = (s) => (s.isGK ? 'GK' : s.role);
+
+function renderRatings(teams, list) {
+  const potmEl = $('ft-potm');
+  const topsEl = $('ft-tops');
+  const potm = list[0];
+  if (!potm) {
+    potmEl.innerHTML = topsEl.innerHTML = '';
+    return;
+  }
+  const pt = teams[potm.teamIdx];
+  potmEl.innerHTML = `<div class="potm-kicker">Player of the Match</div>
+    <div class="potm-row">${ratingBadge(potm.rating, 'big')}
+      <div class="potm-who">
+        <div class="potm-name">${esc(potm.data.name)}</div>
+        <div class="potm-meta"><span class="badge sm"></span>${esc(pt.name)} · ${posOf(potm)} · #${potm.data.num}</div>
+        <div class="potm-line">${esc(statLine(potm))}</div>
+        ${formMarkup(potm.form)}
+      </div>
+    </div>`;
+  badgeStyle(potmEl.querySelector('.badge'), pt.club);
+  topsEl.innerHTML = teams.map((t) => {
+    const rows = list.filter((s) => s.teamIdx === t.idx && s !== potm).slice(0, 3).map((s) => `
+      <div class="tp-row">${ratingBadge(s.rating)}
+        <div class="tp-who"><div class="tp-name">${esc(s.data.back)} <small>${posOf(s)}${s.mins < 85 ? ` · ${s.mins}'` : ''}</small></div>
+        <div class="tp-line">${esc(statLine(s))}</div>${formMarkup(s.form, 'mini')}</div>
+      </div>`).join('');
+    return `<div class="tp-col"><h3><span class="badge sm"></span>${esc(t.name)}</h3>${rows}</div>`;
+  }).join('');
+  topsEl.querySelectorAll('.tp-col .badge').forEach((el, i) => badgeStyle(el, teams[i].club));
+}
+
 let bannerTimer = 0;
+const commentary = new Commentary();
 const hud = {
   say(text) {
+    commentary.say(text);
     const el = document.createElement('div');
     el.className = 'say';
     el.textContent = text;
@@ -220,7 +313,7 @@ const hud = {
   replay(on) {
     $('replay').classList.toggle('hidden', !on);
   },
-  fullTime(a, b, pens) {
+  fullTime(a, b, pens, ratings = []) {
     const pensTxt = pens ? ` (${pens.scored[0]}–${pens.scored[1]} pens)` : '';
     const pensWin = pens && pens.scored[0] !== pens.scored[1];
     const res = pensWin
@@ -230,7 +323,9 @@ const hud = {
     badgeStyle($('ft-ba'), a.club);
     badgeStyle($('ft-bb'), b.club);
     $('ft-result').textContent = res;
+    renderRatings([a, b], ratings);
     setTimeout(() => {
+      syncFtButtons();
       $('fulltime').classList.remove('hidden');
       $('hud').classList.add('hidden');
       $('pens-board')?.classList.add('hidden');
@@ -335,6 +430,7 @@ function setMode(mode, persist = true) {
   sel.mode = mode;
   $('mode-ai')?.classList.toggle('on', mode === '1p');
   $('mode-2p')?.classList.toggle('on', twoPlayer());
+  $('mode-wc')?.classList.remove('on');
   $('btn-coop')?.classList.toggle('hidden', !twoPlayer());
   if ($('btn-coop')) {
     $('btn-coop').textContent = sel.mode === 'coop'
@@ -352,6 +448,7 @@ function setMode(mode, persist = true) {
   input.setPlayMode(mode === '1p' ? '1p' : mode);
   updateJoinUI();
   updateKickoffBtn();
+  if (typeof menuNav !== 'undefined') menuNav.modeCard = twoPlayer() ? 'versus' : '1p';
   if (typeof applyMenuFocus === 'function') applyMenuFocus();
   if (persist) {
     try { localStorage.setItem(MODE_STORE, sel.mode); } catch { /* ignore */ }
@@ -500,6 +597,13 @@ let quitOpen = false;
 let pausedBeforeQuit = false;
 let reconnecting = false;
 let subsOpen = false;
+let wcPickOpen = false;
+let wcHubOpen = false;
+let inWorldCupMatch = false;
+let wcMatchId = null;
+let wcSel = NATIONS[0];
+const wcNav = { zone: 'grid', idx: 0, opt: 1 };
+const wcHubNav = { idx: 0 };
 const subUI = { team: 0, col: 0, out: 0, inn: 0, from: '' };
 
 const PITCH_XY = [
@@ -646,13 +750,16 @@ function toggleHelp(force) {
   else applyMenuFocus();
 }
 
-function startMatch() {
-  if (twoPlayer() && !input.bothJoined()) return;
+function startMatch(opts = {}) {
+  const worldCup = !!opts.worldCup;
+  if (!worldCup && twoPlayer() && !input.bothJoined()) return;
   sfx.init();
   const kits = resolveKits(sel.user, sel.ai);
+  const matchMode = worldCup ? '1p' : sel.mode;
   game.setupMatch({
     userClub: sel.user, aiClub: sel.ai, kits, difficulty: sel.diff, minutes: sel.len,
-    matchMode: sel.mode, pads: input.slots.map((s) => s.padIndex),
+    matchMode, pads: input.slots.map((s) => s.padIndex),
+    allowDraw: !!opts.allowDraw,
   });
   $('sb-home').textContent = sel.user.short;
   $('sb-away').textContent = sel.ai.short;
@@ -661,10 +768,12 @@ function startMatch() {
   $('sb-clock').style.background = hex(kits.user.shirt === 0xf6f6f6 ? 0x1a2340 : kits.user.shirt);
   hud.setScore(0, 0);
   const d = DIFFICULTY[sel.diff];
-  $('sb-diff').textContent = sel.mode === 'versus' ? '2P' : sel.mode === 'coop' ? 'CO-OP' : d.short;
-  $('pause-diff').textContent = sel.mode === 'versus' ? 'Two Player' : sel.mode === 'coop' ? `Co-op · ${d.label}` : d.label;
-  $('playercard2')?.classList.toggle('hidden', !twoPlayer());
+  $('sb-diff').textContent = worldCup ? `WC · ${d.short}` : sel.mode === 'versus' ? '2P' : sel.mode === 'coop' ? 'CO-OP' : d.short;
+  $('pause-diff').textContent = worldCup ? `World Cup · ${d.label}` : sel.mode === 'versus' ? 'Two Player' : sel.mode === 'coop' ? `Co-op · ${d.label}` : d.label;
+  $('playercard2')?.classList.toggle('hidden', matchMode !== 'versus' && matchMode !== 'coop');
   $('menu').classList.add('hidden');
+  $('wc-pick')?.classList.add('hidden');
+  $('wc-hub')?.classList.add('hidden');
   $('fulltime').classList.add('hidden');
   $('quit-confirm').classList.add('hidden');
   $('pause').classList.add('hidden');
@@ -680,6 +789,9 @@ function startMatch() {
   lastCard = [null, null];
   subsOpen = false;
   helpOpen = false;
+  wcPickOpen = false;
+  wcHubOpen = false;
+  if (!worldCup) inWorldCupMatch = false;
   mode = 'match';
   paused = false;
   quitOpen = false;
@@ -688,7 +800,7 @@ function startMatch() {
   sfx.whistle();
 }
 
-function toMenu() {
+function leaveMatch() {
   mode = 'menu';
   game.state = 'idle';
   game.celebration = null;
@@ -699,7 +811,6 @@ function toMenu() {
   game.players = [];
   game.teams = [];
   ball.place(0, 0);
-  $('menu').classList.remove('hidden');
   $('hud').classList.add('hidden');
   $('pause').classList.add('hidden');
   $('quit-confirm').classList.add('hidden');
@@ -723,10 +834,309 @@ function toMenu() {
   paused = false;
   quitOpen = false;
   reconnecting = false;
+}
+
+function toMenu() {
+  leaveMatch();
+  inWorldCupMatch = false;
+  wcPickOpen = false;
+  wcHubOpen = false;
+  $('wc-pick')?.classList.add('hidden');
+  $('wc-hub')?.classList.add('hidden');
+  $('menu').classList.remove('hidden');
   if (twoPlayer()) input.resetJoin();
   setMode(sel.mode, false);
   menuNav.zone = 'mode';
   applyMenuFocus();
+}
+
+function syncFtButtons() {
+  const cup = inWorldCupMatch;
+  $('btn-rematch')?.classList.toggle('hidden', cup);
+  $('btn-menu')?.classList.toggle('hidden', cup);
+  $('btn-ft-continue')?.classList.toggle('hidden', !cup);
+}
+
+function openWorldCup() {
+  if (loadCup()) showWcHub();
+  else showWcPick();
+}
+
+function showWcPick() {
+  wcPickOpen = true;
+  wcHubOpen = false;
+  inWorldCupMatch = false;
+  const list = wcNations();
+  if (!list.includes(wcSel)) wcSel = list[0];
+  wcNav.zone = 'grid';
+  wcNav.idx = Math.max(0, list.indexOf(wcSel));
+  wcNav.opt = 1;
+  $('menu').classList.add('hidden');
+  $('wc-hub')?.classList.add('hidden');
+  $('wc-pick')?.classList.remove('hidden');
+  renderWcPick();
+}
+
+function showWcHub() {
+  wcHubOpen = true;
+  wcPickOpen = false;
+  inWorldCupMatch = false;
+  $('menu').classList.add('hidden');
+  $('wc-pick')?.classList.add('hidden');
+  $('wc-hub')?.classList.remove('hidden');
+  renderWcHub();
+}
+
+function toWcHub() {
+  leaveMatch();
+  inWorldCupMatch = false;
+  showWcHub();
+}
+
+function startNewCup() {
+  const cup = createCup(wcSel.id);
+  if (!cup) return;
+  saveCup(cup);
+  showWcHub();
+}
+
+function startWcMatch() {
+  const cup = loadCup();
+  const fx = nextUserMatch(cup);
+  if (!cup || !fx) return;
+  const oppId = fx.home === cup.userId ? fx.away : fx.home;
+  const user = findNation(cup.userId);
+  const opp = findNation(oppId);
+  if (!user || !opp) return;
+  sel.user = user;
+  sel.ai = opp;
+  inWorldCupMatch = true;
+  wcMatchId = fx.id;
+  startMatch({ worldCup: true, allowDraw: !!fx.group });
+  hud.say(`World Cup · ${describePhase(cup)} · ${user.short} vs ${opp.short}`);
+}
+
+function continueWorldCup() {
+  const cup = loadCup();
+  const fx = cup && (cup.fixtures.find((f) => f.id === wcMatchId) || cup.knockouts.find((k) => k.id === wcMatchId));
+  if (!cup || !fx || !game.teams?.length) {
+    toWcHub();
+    return;
+  }
+  const [userTeam, aiTeam] = game.teams;
+  const pens = game.pens && game.pens.scored[0] !== game.pens.scored[1]
+    ? [game.pens.scored[0], game.pens.scored[1]]
+    : null;
+  let homeG = userTeam.score;
+  let awayG = aiTeam.score;
+  let pensArr = pens;
+  if (fx.home !== cup.userId) {
+    homeG = aiTeam.score;
+    awayG = userTeam.score;
+    pensArr = pens ? [pens[1], pens[0]] : null;
+  }
+  finishUserMatch(cup, fx.id, homeG, awayG, pensArr);
+  toWcHub();
+}
+
+function renderWcPick() {
+  const list = wcNations();
+  const grid = $('wc-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  list.forEach((n, i) => {
+    const el = document.createElement('div');
+    el.className = `club nation${n === wcSel ? ' on' : ''}`;
+    el.innerHTML = `<span class="badge"></span><span class="cname">${n.name}</span><span class="crate">OVR ${teamRating(n)}</span>`;
+    badgeStyle(el.querySelector('.badge'), n);
+    el.onclick = () => {
+      wcSel = n;
+      wcNav.idx = i;
+      renderWcPick();
+    };
+    grid.appendChild(el);
+  });
+  const info = $('wc-info');
+  if (info) {
+    info.innerHTML = clubInfo(wcSel, 'wc');
+    badgeStyle(info.querySelector('.badge'), wcSel);
+  }
+  paintWcFocus();
+}
+
+function wcHubButtons() {
+  return ['btn-wc-play', 'btn-wc-new', 'btn-wc-menu', 'btn-wc-abandon'].filter((id) => {
+    const el = $(id);
+    return el && !el.classList.contains('hidden');
+  });
+}
+
+function paintWcFocus() {
+  document.querySelectorAll('#wc-pick .pad-focus, #wc-hub .pad-focus').forEach((el) => el.classList.remove('pad-focus'));
+  if (wcPickOpen) {
+    if (wcNav.zone === 'grid') $('wc-grid')?.children[wcNav.idx]?.classList.add('pad-focus');
+    else $(wcNav.opt ? 'btn-wc-start' : 'btn-wc-back')?.classList.add('pad-focus');
+    return;
+  }
+  if (wcHubOpen) {
+    const ids = wcHubButtons();
+    if (!ids.length) return;
+    wcHubNav.idx = ((wcHubNav.idx % ids.length) + ids.length) % ids.length;
+    $(ids[wcHubNav.idx])?.classList.add('pad-focus');
+  }
+}
+
+function handleWcPickPad(m) {
+  const list = wcNations();
+  const grid = $('wc-grid');
+  const cols = grid ? gridCols(grid) : 4;
+  if (m.navX || m.navY) {
+    const nx = Math.abs(m.navX) >= Math.abs(m.navY) ? m.navX : 0;
+    const ny = nx ? 0 : m.navY;
+    if (wcNav.zone === 'grid') {
+      const next = wcNav.idx + nx + ny * cols;
+      if (next >= list.length) {
+        wcNav.zone = 'opts';
+        wcNav.opt = 1;
+      } else if (next >= 0) {
+        wcNav.idx = next;
+        wcSel = list[wcNav.idx];
+        renderWcPick();
+        return;
+      }
+    } else if (ny < 0) wcNav.zone = 'grid';
+    else if (nx) wcNav.opt = nx > 0 ? 1 : 0;
+    paintWcFocus();
+  }
+  if (m.confirm) {
+    input.latchMenu();
+    if (wcNav.zone === 'opts') $(wcNav.opt ? 'btn-wc-start' : 'btn-wc-back')?.click();
+    else {
+      wcNav.zone = 'opts';
+      wcNav.opt = 1;
+      paintWcFocus();
+    }
+  }
+  if (m.back) {
+    input.latchMenu();
+    toMenu();
+  }
+}
+
+function handleWcHubPad(m) {
+  const ids = wcHubButtons();
+  if (m.navX || m.navY) {
+    wcHubNav.idx += m.navX + m.navY;
+    paintWcFocus();
+  }
+  if (m.confirm && ids[wcHubNav.idx]) {
+    input.latchMenu();
+    $(ids[wcHubNav.idx])?.click();
+  }
+  if (m.back) {
+    input.latchMenu();
+    toMenu();
+  }
+}
+
+function renderWcHub() {
+  const cup = loadCup();
+  if (!cup) {
+    showWcPick();
+    return;
+  }
+  const you = findNation(cup.userId);
+  const status = userStatus(cup);
+  const next = nextUserMatch(cup);
+  $('wc-phase').textContent = describePhase(cup);
+  const youEl = $('wc-you');
+  if (youEl && you) {
+    youEl.innerHTML = `<span class="badge sm"></span>${you.name}`;
+    badgeStyle(youEl.querySelector('.badge'), you);
+  }
+  const st = $('wc-status');
+  st.className = 'wc-status';
+  if (status === 'champion') {
+    st.classList.add('champ');
+    st.textContent = `${you.name} are world champions!`;
+  } else if (status === 'eliminated') {
+    st.classList.add('out');
+    const champ = cup.champion ? findNation(cup.champion) : null;
+    st.textContent = champ
+      ? `${you.name} are out. ${champ.name} lift the trophy.`
+      : `${you.name} are eliminated.`;
+  } else {
+    st.textContent = next
+      ? `Your next match is ready.`
+      : describePhase(cup);
+  }
+  const nextEl = $('wc-next');
+  if (next) {
+    const home = findNation(next.home);
+    const away = findNation(next.away);
+    const meta = next.group
+      ? `Group ${next.group} · Matchday ${next.md}`
+      : roundName(next.round);
+    nextEl.innerHTML = `<div><div class="wn-kicker">Your next match</div>
+      <div class="wn-teams"><span class="badge sm" data-n="h"></span>${home.name} vs ${away.name}<span class="badge sm" data-n="a"></span></div>
+      <div class="wn-meta">${meta}</div></div>`;
+    badgeStyle(nextEl.querySelector('[data-n="h"]'), home);
+    badgeStyle(nextEl.querySelector('[data-n="a"]'), away);
+  } else nextEl.innerHTML = '';
+  const tables = groupTables(cup);
+  const groupsEl = $('wc-groups');
+  groupsEl.innerHTML = GROUPS.map((g) => {
+    const rows = tables[g].map((r, i) => {
+      const n = findNation(r.id);
+      return `<tr class="${r.id === cup.userId ? 'you' : ''}">
+        <td>${i + 1}</td>
+        <td class="team"><span class="badge sm" data-id="${r.id}"></span>${n.short}</td>
+        <td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
+        <td>${r.gf}</td><td>${r.ga}</td><td>${r.pts}</td></tr>`;
+    }).join('');
+    return `<div class="wc-group"><h3>Group ${g}</h3>
+      <table class="wc-table"><thead><tr>
+        <th>#</th><th class="team">Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>Pts</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }).join('');
+  groupsEl.querySelectorAll('.badge').forEach((el) => {
+    const n = findNation(el.dataset.id);
+    if (n) badgeStyle(el, n);
+  });
+  const played = cup.fixtures.filter((f) => f.homeG != null);
+  const resEl = $('wc-results');
+  if (played.length) {
+    const byMd = [1, 2, 3].map((md) => {
+      const rows = cup.fixtures.filter((f) => f.md === md && f.homeG != null);
+      if (!rows.length) return '';
+      return `<h3>Matchday ${md}</h3><div class="wc-md">${rows.map((f) =>
+        `<div class="wc-score${f.home === cup.userId || f.away === cup.userId ? ' you' : ''}">${matchLabel(f)}</div>`).join('')}</div>`;
+    }).join('');
+    resEl.innerHTML = byMd;
+  } else resEl.innerHTML = '';
+  const bracket = $('wc-bracket');
+  if (groupsComplete(cup)) {
+    const rounds = bracketRounds(cup);
+    const col = (title, ties) => `<div class="wc-col"><h3>${title}</h3>${ties.map((t) => {
+      const you = t.home === cup.userId || t.away === cup.userId;
+      const h = t.home ? findNation(t.home) : null;
+      const a = t.away ? findNation(t.away) : null;
+      const score = t.homeG == null
+        ? (h && a ? `${h.short} vs ${a.short}` : 'TBD')
+        : matchLabel(t);
+      return `<div class="wc-tie${you ? ' you' : ''}">${score}</div>`;
+    }).join('')}</div>`;
+    bracket.innerHTML = col('Quarter-finals', rounds.qf) + col('Semi-finals', rounds.sf) + col('Final', rounds.final);
+    bracket.classList.remove('hidden');
+  } else {
+    bracket.innerHTML = '';
+    bracket.classList.add('hidden');
+  }
+  $('btn-wc-play')?.classList.toggle('hidden', !next);
+  $('btn-wc-new')?.classList.toggle('hidden', status === 'playing');
+  $('btn-wc-abandon')?.classList.toggle('hidden', status !== 'playing');
+  wcHubNav.idx = 0;
+  paintWcFocus();
 }
 
 function openQuitConfirm() {
@@ -737,6 +1147,15 @@ function openQuitConfirm() {
   quitOpen = true;
   paused = true;
   $('pause').classList.add('hidden');
+  const tip = $('quit-confirm')?.querySelector('.tip');
+  const yes = $('btn-quit-yes');
+  if (inWorldCupMatch) {
+    if (tip) tip.textContent = "The match will end and you'll go back to the World Cup hub. This cannot be undone.";
+    if (yes) yes.textContent = 'Quit to hub';
+  } else {
+    if (tip) tip.textContent = "The match will end and you'll go back to pick clubs. This cannot be undone.";
+    if (yes) yes.textContent = 'Quit to team select';
+  }
   $('quit-confirm').classList.remove('hidden');
   setOverlayFocus('quit', 0);
 }
@@ -750,7 +1169,8 @@ function closeQuitConfirm() {
 }
 
 function confirmQuit() {
-  toMenu();
+  if (inWorldCupMatch) toWcHub();
+  else toMenu();
 }
 
 $('btn-start').onclick = startMatch;
@@ -773,7 +1193,21 @@ $('btn-rematch').onclick = startMatch;
 $('btn-menu').onclick = toMenu;
 $('mode-ai').onclick = () => setMode('1p');
 $('mode-2p').onclick = () => setMode(sel.mode === 'coop' ? 'coop' : 'versus');
+$('mode-wc').onclick = () => openWorldCup();
 $('btn-coop').onclick = () => setMode(sel.mode === 'coop' ? 'versus' : 'coop');
+$('btn-wc-back')?.addEventListener('click', () => toMenu());
+$('btn-wc-start')?.addEventListener('click', () => startNewCup());
+$('btn-wc-play')?.addEventListener('click', () => startWcMatch());
+$('btn-wc-new')?.addEventListener('click', () => {
+  clearCup();
+  showWcPick();
+});
+$('btn-wc-menu')?.addEventListener('click', () => toMenu());
+$('btn-wc-abandon')?.addEventListener('click', () => {
+  clearCup();
+  toMenu();
+});
+$('btn-ft-continue')?.addEventListener('click', () => continueWorldCup());
 
 function setPaused(v) {
   if (quitOpen) return;
@@ -795,12 +1229,14 @@ function overlayButtons() {
   if (subsOpen) return ['btn-sub-confirm', 'btn-sub-close'];
   if (paused) return ['btn-resume', 'btn-subs', 'btn-quit'];
   if (!$('halftime')?.classList.contains('hidden')) return ['btn-second-half', 'btn-ht-subs'];
-  if (!$('fulltime').classList.contains('hidden')) return ['btn-rematch', 'btn-menu'];
+  if (!$('fulltime').classList.contains('hidden')) {
+    return inWorldCupMatch ? ['btn-ft-continue'] : ['btn-rematch', 'btn-menu'];
+  }
   return [];
 }
 
 function paintOverlayFocus() {
-  for (const id of ['btn-help-close', 'btn-resume', 'btn-subs', 'btn-quit', 'btn-quit-cancel', 'btn-quit-yes', 'btn-rematch', 'btn-menu', 'btn-second-half', 'btn-ht-subs', 'btn-sub-confirm', 'btn-sub-close', 'btn-dream-best', 'btn-dream-reset', 'btn-dream-done']) {
+  for (const id of ['btn-help-close', 'btn-resume', 'btn-subs', 'btn-quit', 'btn-quit-cancel', 'btn-quit-yes', 'btn-rematch', 'btn-menu', 'btn-ft-continue', 'btn-second-half', 'btn-ht-subs', 'btn-sub-confirm', 'btn-sub-close', 'btn-dream-best', 'btn-dream-reset', 'btn-dream-done']) {
     $(id)?.classList.remove('pad-focus');
   }
   const ids = overlayButtons();
@@ -824,7 +1260,10 @@ function overlayBack() {
   else if (quitOpen) closeQuitConfirm();
   else if (subsOpen) closeSubs();
   else if (paused) setPaused(false);
-  else if (!$('fulltime').classList.contains('hidden')) toMenu();
+  else if (!$('fulltime').classList.contains('hidden')) {
+    if (inWorldCupMatch) continueWorldCup();
+    else toMenu();
+  }
 }
 
 function openSubs(from) {
@@ -938,7 +1377,7 @@ function syncHalfTime() {
   }
 }
 
-const menuNav = { zone: 'mode', opt: 4 };
+const menuNav = { zone: 'mode', opt: 4, modeCard: twoPlayer() ? 'versus' : '1p' };
 const overlayFocus = { name: '', idx: 0 };
 const OPTS = [
   { id: 'opt-diff', key: 'diff', parse: (v) => v },
@@ -963,12 +1402,19 @@ function gridCols(el) {
 
 function applyMenuFocus() {
   document.querySelectorAll('.pad-focus').forEach((el) => el.classList.remove('pad-focus'));
+  if (wcPickOpen || wcHubOpen) {
+    paintWcFocus();
+    return;
+  }
   if (mode !== 'menu' || helpOpen || dreamOpen) {
     paintOverlayFocus();
     return;
   }
   if (menuNav.zone === 'mode') {
-    $(sel.mode === '1p' ? 'mode-ai' : 'mode-2p')?.classList.add('pad-focus');
+    const id = menuNav.modeCard === 'wc' ? 'mode-wc'
+      : (menuNav.modeCard === 'versus' || twoPlayer()) ? 'mode-2p'
+      : 'mode-ai';
+    $(id)?.classList.add('pad-focus');
     return;
   }
   if (menuNav.zone === 'user' || menuNav.zone === 'ai') {
@@ -1037,8 +1483,23 @@ function moveOpts(dx, dy) {
 }
 
 function moveMode(dx, dy) {
-  if (dx) setMode(dx > 0 ? (sel.mode === 'coop' ? 'coop' : 'versus') : '1p');
-  if (dy > 0) {
+  const cards = ['1p', 'versus', 'wc'];
+  let i = cards.indexOf(menuNav.modeCard || (twoPlayer() ? 'versus' : '1p'));
+  if (i < 0) i = 0;
+  if (dx) {
+    i = Math.max(0, Math.min(cards.length - 1, i + dx));
+    menuNav.modeCard = cards[i];
+    if (menuNav.modeCard === 'wc') {
+      $('mode-ai')?.classList.remove('on');
+      $('mode-2p')?.classList.remove('on');
+      $('mode-wc')?.classList.add('on');
+      applyMenuFocus();
+    } else {
+      $('mode-wc')?.classList.remove('on');
+      setMode(menuNav.modeCard === 'versus' ? (sel.mode === 'coop' ? 'coop' : 'versus') : '1p');
+    }
+  }
+  if (dy > 0 && menuNav.modeCard !== 'wc') {
     menuNav.zone = 'user';
     applyMenuFocus();
   }
@@ -1055,9 +1516,17 @@ function handleSlotNav(slotMenu, side) {
 
 function handlePadMenu() {
   const m = input.menu;
+  if (reconnecting) return;
+  if (wcPickOpen) {
+    handleWcPickPad(m);
+    return;
+  }
+  if (wcHubOpen) {
+    handleWcHubPad(m);
+    return;
+  }
   const blocking = helpOpen || dreamOpen || quitOpen || subsOpen || (paused && !reconnecting)
     || !$('fulltime').classList.contains('hidden') || !$('halftime')?.classList.contains('hidden');
-  if (reconnecting) return;
   if (subsOpen && (m.lb || m.rb) && game.matchMode === 'versus') {
     subUI.team = m.rb ? 1 : 0;
     subUI.out = 0;
@@ -1066,7 +1535,7 @@ function handlePadMenu() {
   }
   if ((m.lb || m.rb) && mode === 'menu' && !blocking && !twoPlayer()) {
     if (menuNav.zone === 'opts' && menuNav.opt === 0) moveOpts(m.rb ? 1 : -1, 0);
-    else if (menuNav.zone === 'mode') setMode(m.rb ? 'versus' : '1p');
+    else if (menuNav.zone === 'mode') moveMode(m.rb ? 1 : -1, 0);
     else {
       menuNav.zone = menuNav.zone === 'ai' ? 'user' : 'ai';
       applyMenuFocus();
@@ -1104,8 +1573,13 @@ function handlePadMenu() {
     if (blocking) activateOverlay();
     else if (mode === 'menu') {
       if (menuNav.zone === 'mode') {
-        menuNav.zone = 'user';
-        applyMenuFocus();
+        if (menuNav.modeCard === 'wc') {
+          input.latchMenu();
+          openWorldCup();
+        } else {
+          menuNav.zone = 'user';
+          applyMenuFocus();
+        }
       } else if (menuNav.zone === 'opts') {
         const spec = activeOpts()[menuNav.opt];
         if (spec && !spec.key) {
@@ -1219,7 +1693,8 @@ function updateCamera(dt, t) {
       const bx = THREE.MathUtils.clamp(b.x, -46, 46);
       const bz = THREE.MathUtils.clamp(b.z, -30, 30);
       const follow = twoP ? bx : THREE.MathUtils.clamp(fx * 0.85, -44, 44);
-      pos = tmpV.set(follow, twoP ? 19.2 : 17.5, twoP ? 40.5 : 36.5 + fz * 0.06);
+      // Near stand roof and light strip start at z ≈ 39; keep the camera in front of them.
+      pos = tmpV.set(follow, twoP ? 22 : 17.5, twoP ? 38 : 36.5 + fz * 0.06);
       look = new THREE.Vector3(twoP ? bx * 0.9 : fx * 0.93, 0.15, twoP ? bz * 0.14 : fz * 0.45 + 2);
       rate = twoP ? 2.05 : 3;
     } else {
@@ -1322,6 +1797,13 @@ function fillCard(prefix, p) {
   const { lon, fin } = shotTraits(d);
   $(`${prefix}-stats`).innerHTML = `<span>SHO <b>${d.sho}</b></span><span>LON <b>${lon}</b></span><span>FIN <b>${fin}</b></span><span>PAS <b>${d.pas}</b></span>`;
   $(`${prefix}-ovr`).textContent = d.ovr;
+  const fm = $(`${prefix}-form`);
+  if (fm) {
+    const v = formView(p.form);
+    fm.className = `pc-form ${v.dir}${v.show ? '' : ' hidden'}`;
+    fm.textContent = v.show ? `${v.arrow} ${v.score.toFixed(1)}` : '';
+    fm.title = v.show ? v.label : '';
+  }
 }
 function markBook(id, p) {
   const el = $(id);
@@ -1348,6 +1830,48 @@ function updatePlayerCard() {
   }
   setStamBar('pc2-stam', 'pc2-stam-track', h1);
   markBook('pc2-card', h1);
+}
+
+const stressLevel = (k) => (k < 0.35 ? 'calm' : k < 0.65 ? 'tense' : 'panic');
+function updateStress() {
+  const s = mode === 'match' ? game.penStress : null;
+  const live = !!s && (game.state !== 'pens' || game.pens?.phase === 'ready' || game.pens?.phase === 'flight');
+  const el = $('stress');
+  const zone = $('power-zone');
+  penReticle.visible = live && !s.done && !!s.aim;
+  if (penReticle.visible) {
+    penReticle.position.set(s.aim.x, s.aim.y, s.aim.z);
+    penReticle.userData.mat.color.setHSL((1 - s.stress) * 0.33, 0.95, 0.55);
+  }
+  if (zone) {
+    const on = live && s.human && !s.done
+      && (game.state === 'pens' ? !!game.pens?.charge : !!game.humanFor?.(s.kicker)?.charge);
+    zone.classList.toggle('hidden', !on);
+    if (on) {
+      zone.style.left = `${(s.zone.lo * 100).toFixed(1)}%`;
+      zone.style.width = `${((s.zone.hi - s.zone.lo) * 100).toFixed(1)}%`;
+    }
+  }
+  if (!el) return;
+  el.classList.toggle('hidden', !live);
+  if (!live) return;
+  const lvl = stressLevel(s.stress);
+  el.classList.remove('calm', 'tense', 'panic');
+  el.classList.add(lvl);
+  el.style.setProperty('--pulse', `${(1.5 - s.stress * 1.1).toFixed(2)}s`);
+  $('st-fill').style.width = `${Math.round(s.stress * 100)}%`;
+  $('st-val').textContent = { calm: 'CALM', tense: 'TENSE', panic: 'NERVY' }[lvl];
+  $('st-name').textContent = `${s.kicker.data.num} · ${s.kicker.data.back}`;
+  $('st-tag').textContent = s.tag || '';
+  const keep = $('st-keep');
+  const showK = s.showKeeper && s.keep != null && s.keeper;
+  keep.classList.toggle('hidden', !showK);
+  if (showK) {
+    keep.classList.remove('calm', 'tense', 'panic');
+    keep.classList.add(stressLevel(s.keep));
+    $('st-kname').textContent = s.keeper.data.back;
+    $('st-kfill').style.width = `${Math.round(s.keep * 100)}%`;
+  }
 }
 
 function fmtClock(sec) {
@@ -1426,11 +1950,13 @@ function handleUI() {
     if (code === 'KeyM') {
       muted = !muted;
       if (sfx.master) sfx.master.gain.value = muted ? 0 : 0.8;
+      commentary.setMuted(muted);
     }
     if (code === 'Escape') {
       if (helpOpen) toggleHelp(false);
       else if (subsOpen) closeSubs();
       else if (quitOpen) closeQuitConfirm();
+      else if (wcPickOpen || wcHubOpen) toMenu();
       else if (mode === 'match' && game.state !== 'fulltime') openQuitConfirm();
     }
     if (code === 'KeyP' && mode === 'match' && game.state !== 'fulltime' && !quitOpen && !reconnecting) {
@@ -1502,6 +2028,7 @@ function frame(now) {
       updatePlayerCard();
       drawMinimap();
     } else ball.updateVisual(dt);
+    updateStress();
 
     if (bannerTimer > 0) {
       bannerTimer -= dt;
@@ -1511,6 +2038,7 @@ function frame(now) {
     updateCamera(dt, elapsed);
     updateNameTag();
     stadium.update(dt, elapsed);
+    grade.uniforms.uTime.value = elapsed % 100;
     if (composer) composer.render();
     else renderer.render(scene, camera);
     input.endFrame();
@@ -1524,5 +2052,3 @@ renderMenu();
 setMode(sel.mode, false);
 $('loading').classList.add('hidden');
 requestAnimationFrame(frame);
-
-window.__game = game;

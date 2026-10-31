@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BALL_R, HALF_L, GOAL_HW, GOAL_H, GOAL_D, POST_R } from './constants.js';
-import { ballTexture } from './textures.js';
+import { ballTexture, contactShadowTexture } from './textures.js';
 
 const GRAVITY = 9.81;
 const ROLL_DECEL = 1.9;
@@ -17,6 +17,12 @@ export class Ball {
     );
     this.mesh.castShadow = true;
     scene.add(this.mesh);
+    this.contact = new THREE.Mesh(
+      new THREE.PlaneGeometry(BALL_R * 4, BALL_R * 4).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: contactShadowTexture(), transparent: true, depthWrite: false }),
+    );
+    this.contact.renderOrder = -1;
+    scene.add(this.contact);
     this.pos = new THREE.Vector3(0, BALL_R, 0);
     this.vel = new THREE.Vector3();
     this.spin = new THREE.Vector3();
@@ -141,6 +147,10 @@ export class Ball {
 
   updateVisual(dt) {
     this.mesh.position.copy(this.pos);
+    const lift = Math.max(0, this.pos.y - BALL_R);
+    this.contact.position.set(this.pos.x, 0.012, this.pos.z);
+    this.contact.scale.setScalar(1 + lift * 0.6);
+    this.contact.material.opacity = Math.max(0, 1 - lift * 0.5);
     const hs = Math.hypot(this.vel.x, this.vel.z);
     if (hs > 0.01) {
       this.spinAxis.set(this.vel.z, 0, -this.vel.x).normalize();

@@ -216,42 +216,160 @@ export function adTexture(renderer) {
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 
-export function backTexture(renderer, name, num, color) {
-  const [c, g] = canvas(256, 256);
-  g.clearRect(0, 0, 256, 256);
-  g.fillStyle = color;
+export function inkFor(shirt) {
+  const r = (shirt >> 16) & 255;
+  const gr = (shirt >> 8) & 255;
+  const b = shirt & 255;
+  return 0.299 * r + 0.587 * gr + 0.114 * b > 150 ? '#111111' : '#ffffff';
+}
+
+function fabricNoise(g, W, H, amount) {
+  const img = g.getImageData(0, 0, W, H);
+  const d = img.data;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const n = ((x + y) % 2 ? 1 : -1) * amount * 0.5 + (Math.random() - 0.5) * amount;
+      d[i] += n;
+      d[i + 1] += n;
+      d[i + 2] += n;
+    }
+  }
+  g.putImageData(img, 0, 0);
+}
+
+// Torso UVs wrap around the body with u = 0 at the spine and u = 0.5 at the chest; v runs hem (0) to collar (1).
+export function shirtTexture(renderer, kit, player) {
+  const W = 512;
+  const H = 256;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = hex(kit.shirt);
+  g.fillRect(0, 0, W, H);
+  if (kit.pattern === 'stripes') {
+    g.fillStyle = hex(kit.stripe);
+    const n = 14;
+    for (let i = 1; i < n; i += 2) g.fillRect((i / n) * W, 0, W / n, H);
+  } else if (kit.pattern === 'center') {
+    const w = W * 0.07;
+    g.fillStyle = '#ffffff';
+    g.fillRect(W / 2 - w / 2 - 6, 0, w + 12, H);
+    g.fillStyle = hex(kit.stripe);
+    g.fillRect(W / 2 - w / 2, 0, w, H);
+  }
+  // Side panels
+  g.fillStyle = 'rgba(0,0,0,0.12)';
+  g.fillRect(W * 0.235, 40, W * 0.03, H);
+  g.fillRect(W * 0.735, 40, W * 0.03, H);
+
+  const trim = hex(kit.trim ?? 0x111111);
+  g.fillStyle = trim;
+  g.fillRect(0, 0, W, 7);
+  g.fillRect(0, H - 9, W, 9);
+  // Shoulder piping
+  g.fillRect(0, 26, W, 3);
+
+  const ink = kit.number ?? inkFor(kit.shirt);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = 'bold 38px Arial, sans-serif';
-  g.fillText(name, 128, 40, 236);
-  g.font = 'bold 150px Arial, sans-serif';
-  g.fillText(String(num), 128, 158);
+
+  // Crest on the left chest, maker mark on the right
+  const cx = W * 0.59;
+  const cy = 74;
+  g.fillStyle = trim;
+  g.beginPath();
+  g.moveTo(cx - 11, cy - 13);
+  g.lineTo(cx + 11, cy - 13);
+  g.lineTo(cx + 11, cy + 2);
+  g.quadraticCurveTo(cx + 10, cy + 12, cx, cy + 16);
+  g.quadraticCurveTo(cx - 10, cy + 12, cx - 11, cy + 2);
+  g.closePath();
+  g.fill();
+  g.fillStyle = hex(kit.shirt);
+  g.fillRect(cx - 6, cy - 8, 12, 3);
+  g.fillStyle = ink;
+  g.beginPath();
+  const mx = W * 0.41;
+  g.moveTo(mx - 9, cy + 2);
+  g.lineTo(mx + 9, cy - 8);
+  g.lineTo(mx + 3, cy + 6);
+  g.closePath();
+  g.fill();
+
+  const sponsor = ['CURSOR', 'VOLT', 'NOVA BANK', 'PIXEL AIR', 'ORBIT'][(kit.shirt >>> 3) % 5];
+  g.font = 'italic 900 22px "Arial Black", Arial, sans-serif';
+  g.fillText(sponsor, W / 2, 110, 104);
+
+  if (player) {
+    g.font = 'bold 19px Arial, sans-serif';
+    for (const x of [0, W]) g.fillText(String(player.back ?? '').toUpperCase(), x, 62, 120);
+    g.font = 'bold 92px "Arial Narrow", Arial, sans-serif';
+    for (const x of [0, W]) {
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(0,0,0,0.18)';
+      g.strokeText(String(player.num ?? ''), x, 132, 110);
+      g.fillText(String(player.num ?? ''), x, 132, 110);
+    }
+  }
+  fabricNoise(g, W, H, 10);
   return finish(c, renderer);
 }
 
-// Torso UVs wrap around the body with u = 0 at the chest.
-export function shirtTexture(renderer, kit) {
-  const S = 256;
-  const [c, g] = canvas(S, S);
-  g.fillStyle = hex(kit.shirt);
-  g.fillRect(0, 0, S, S);
-  if (kit.pattern === 'stripes') {
-    g.fillStyle = hex(kit.stripe);
-    const n = 12;
-    for (let i = 0; i < n; i += 2) g.fillRect((i / n) * S, 0, S / n, S);
-  } else if (kit.pattern === 'center') {
-    const w = S * 0.08;
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, w + 6, S);
-    g.fillRect(S - w - 6, 0, w + 6, S);
-    g.fillStyle = hex(kit.stripe);
-    g.fillRect(0, 0, w, S);
-    g.fillRect(S - w, 0, w, S);
-  }
-  g.fillStyle = hex(kit.trim);
-  g.fillRect(0, 0, S, 10);
-  g.fillRect(0, S - 10, S, 10);
+export function sleeveTexture(renderer, kit) {
+  const [c, g] = canvas(64, 64);
+  g.fillStyle = hex(kit.sleeves ?? kit.shirt);
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = hex(kit.trim ?? 0x111111);
+  g.fillRect(0, 56, 64, 8);
+  fabricNoise(g, 64, 64, 10);
   return finish(c, renderer);
+}
+
+export function sockTexture(renderer, kit) {
+  const [c, g] = canvas(32, 128);
+  g.fillStyle = hex(kit.socks);
+  g.fillRect(0, 0, 32, 128);
+  g.fillStyle = hex(kit.trim ?? 0x111111);
+  g.fillRect(0, 9, 32, 7);
+  g.fillStyle = 'rgba(0,0,0,0.1)';
+  g.fillRect(0, 100, 32, 28);
+  fabricNoise(g, 32, 128, 10);
+  return finish(c, renderer);
+}
+
+// Grey strand streaks running along v (crown to hairline); used as both a colour multiplier and a bump map.
+export function hairTexture() {
+  const W = 128;
+  const H = 256;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = '#c8c8c8';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 700; i++) {
+    const x = Math.random() * W;
+    const v = 150 + Math.random() * 105;
+    g.strokeStyle = `rgb(${v},${v},${v})`;
+    g.lineWidth = 0.6 + Math.random() * 1.2;
+    g.beginPath();
+    g.moveTo(x, Math.random() * H * 0.3);
+    g.lineTo(x + (Math.random() - 0.5) * 6, H * (0.6 + Math.random() * 0.4));
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3, 1);
+  return t;
+}
+
+export function contactShadowTexture() {
+  const S = 128;
+  const [c, g] = canvas(S, S);
+  const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grd.addColorStop(0, 'rgba(0,0,0,0.75)');
+  grd.addColorStop(0.45, 'rgba(0,0,0,0.4)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  return new THREE.CanvasTexture(c);
 }
 
 export function concreteTexture(renderer) {

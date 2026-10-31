@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { HALF_L, HALF_W, GOAL_HW, GOAL_H, BALL_R, PEN_DEPTH, PEN_HW, DIFFICULTY, resolveDifficulty } from './constants.js';
 import { PlayerModel, kitMaterials, POSE, KICK, kickContactDelay, MODEL_STATE_SIZE } from './playerModel.js';
 import { MAGNUS, SPIN_DECAY } from './ball.js';
-import { celebrationFor } from './celebrations.js';
+import { celebrationFor, shortCelebrationFor } from './celebrations.js';
 import { teamRating, shotTraits, makeBench } from './teams.js';
 import { rumble, P1_COLOR, P2_COLOR } from './input.js';
+import { newStats, matchRatings } from './ratings.js';
+import { applyFormToData, playerForm, recordMatchForm } from './form.js';
 
 // 4-3-3 in team coordinates: own goal at x = -52.5, +z is the team's right side.
 const FORMATION = [
@@ -32,6 +34,7 @@ const pick = (arr) => arr[(rand() * arr.length) | 0];
 
 const REC_STRIDE = 4 + MODEL_STATE_SIZE;
 const SHOT_TYPES = new Set(['shot', 'power', 'finesse', 'chip', 'header', 'bicycle']);
+const PASS_TYPES = new Set(['pass', 'through', 'cross']);
 const CHARGE_RATE = { shot: 1.2, power: 0.75, finesse: 1.2, chip: 1.3, bicycle: 1.05, pass: 1.5, through: 1.4, cross: 1.3, clear: 1.5 };
 export const KICK_ACTIONS = Object.keys(CHARGE_RATE);
 const KICK_LABEL = {
@@ -71,7 +74,8 @@ class Player {
     this.game = game;
     this.team = team;
     this.idx = idx;
-    this.data = data;
+    this.form = playerForm(data, team.club?.id);
+    this.data = applyFormToData(data, this.form);
     const f = FORMATION[idx];
     this.role = f.role;
     this.base = { x: f.x, z: f.z };
@@ -95,13 +99,14 @@ class Player {
     this.headYaw = 0;
     this.headPitch = 0;
     const mul = team.ai ? game.diff.speed : 1 + game.diff.assist * 0.03;
-    this.sprint = (6.3 + data.pac * 0.024) * mul;
+    this.sprint = (6.3 + this.data.pac * 0.024) * mul;
     this.jog = this.sprint * 0.7;
     this.stamina = 1;
     this.stamLock = false;
     this.cards = 0;
     this.sentOff = false;
-    this.drib = (data.pac + data.pas + data.ovr) / 3;
+    this.st = game.trackStats(this);
+    this.drib = (this.data.pac + this.data.pas + this.data.ovr) / 3;
     if (team.ai) this.drib *= lerp(0.82, 1.12, game.diff.dribble);
     else this.drib *= 1 + game.diff.assist * 0.12;
   }
@@ -116,6 +121,7 @@ class Player {
 
   dispose() {
     this.game.scene.remove(this.model.root);
+    this.model.dispose();
   }
 }
 
@@ -132,6 +138,7 @@ export class Game {
     this.humans = [];
     this.matchMode = '1p';
     this.pens = null;
+    this.allowDraw = false;
     ball.onBounce = (v) => { if (v > 4) this.sfx.kick(Math.min(0.4, v / 30)); };
     ball.onPost = (v) => {
       if (v < 3) return;
@@ -145,7 +152,7 @@ export class Game {
 
   // ------------------------------------------------------------------ setup
 
-  setupMatch({ userClub, aiClub, kits, difficulty, minutes, matchMode = '1p', pads = [] }) {
+  setupMatch({ userClub, aiClub, kits, difficulty, minutes, matchMode = '1p', pads = [], allowDraw = false }) {
     for (const p of this.players) p.dispose();
     this.difficulty = resolveDifficulty(difficulty);
     this.diff = DIFFICULTY[this.difficulty];
@@ -165,6 +172,11 @@ export class Game {
     };
     this.teams = [mk(0, userClub, kits.user, 1, false), mk(1, aiClub, kits.ai, -1, !versus)];
     this.players = [];
+    this.stats = new Map();
+    this.matchMinutes = minutes;
+    this.clock = 0;
+    this.lastPass = null;
+    this.prevKick = null;
     for (const t of this.teams) {
       t.players = t.club.players.map((d, i) => new Player(this, t, i, d));
       t.bench = makeBench(t.club);
@@ -174,7 +186,6 @@ export class Game {
       this.players.push(...t.players);
       t.gk = t.players[0];
     }
-    this.clock = 0;
     this.clockRate = 5400 / (minutes * 60);
     this.half = 1;
     this.owner = null;
@@ -195,6 +206,8 @@ export class Game {
     this.switchCd = 0;
     this.frames = [];
     this.pens = null;
+    this.penStress = null;
+    this.allowDraw = !!allowDraw;
     this.outs = 0;
     this.outsSinceWindow = 0;
     this.subWindow = false;
@@ -203,6 +216,37 @@ export class Game {
 
   isHumanControlled(p) {
     return this.humans.some((h) => h.controlled === p);
+  }
+
+  // Keyed by team + squad identity so subbed-off and sent-off players keep their line.
+  trackStats(p) {
+    if (!this.stats) this.stats = new Map();
+    const key = `${p.team.idx}|${p.data.num}|${p.data.name}`;
+    let s = this.stats.get(key);
+    if (!s) {
+      s = newStats(p, this.clock ?? 0);
+      this.stats.set(key, s);
+    }
+    return s;
+  }
+
+  assistFor(p, t) {
+    const lp = this.lastPass;
+    if (lp && lp.to === p && t - lp.t < 10) return lp.from;
+    const pk = this.prevKick;
+    if (pk && PASS_TYPES.has(pk.type) && pk.team === p.team && pk.player !== p && t - pk.t < 3.5) return pk.player;
+    return null;
+  }
+
+  noteShot(p) {
+    if (this.state === 'pens') return;
+    p.st.shots++;
+    const from = this.assistFor(p, this.simT);
+    if (from) from.st.keyPasses++;
+  }
+
+  matchRatings() {
+    return matchRatings(this);
   }
 
   humanFor(p) {
@@ -382,6 +426,8 @@ export class Game {
     if (kind === 'penalty') this.placePenalty(team, taker, x);
     this.setOwner(taker, true);
     if (team.human && !taker.isGK) this.takeHuman(taker);
+    this.penStress = null;
+    if (kind === 'penalty') this.beginPenStress(taker, this.opp(team).gk);
     const msg = {
       throw: 'Throw-in', corner: 'Corner kick', goalkick: 'Goal kick',
       freekick: 'Free kick', penalty: 'Penalty',
@@ -446,6 +492,15 @@ export class Game {
         this.say(pick(['Intercepted!', 'Read that well', 'Cut out!']));
       }
     }
+    const lk = this.lastKick;
+    if (!silent && lk && !lk.counted && lk.player !== p && PASS_TYPES.has(lk.type) && this.simT - lk.t < 4) {
+      lk.counted = true;
+      if (lk.team === p.team) {
+        lk.player.st.passesDone++;
+        this.lastPass = { from: lk.player, to: p, t: this.simT };
+      } else p.st.interceptions++;
+    }
+    if (this.lastPass && this.lastPass.from.team !== p.team) this.lastPass = null;
     this.receiver = null;
     this.lastTouch = p.team;
     if (p.team.human && !p.isGK) this.takeHuman(p);
@@ -645,11 +700,15 @@ export class Game {
     }
     p.kickCd = 0.3;
     this.lastTouch = p.team;
+    this.prevKick = this.lastKick;
     this.lastKick = { type: plan.type, team: p.team, player: p, t: this.simT, dist: plan.dist ?? 0 };
+    if (PASS_TYPES.has(plan.type) && this.state !== 'pens') p.st.passes++;
     this.sfx.kick(clamp(hyp(plan.vx, plan.vz) / (plan.throw ? 22 : 34), 0.15, 0.85));
     rumble(plan.throw ? 0.16 : (SHOT_TYPES.has(plan.type) ? 0.42 : 0.2), plan.throw ? 70 : (SHOT_TYPES.has(plan.type) ? 95 : 55), plan.throw ? 0.12 : (SHOT_TYPES.has(plan.type) ? 0.5 : 0.18), this.padFor(p));
     if (SHOT_TYPES.has(plan.type) && !plan.throw) {
-      this.shot = { team: p.team, player: p, type: plan.type, t: this.simT, dist: plan.dist, checked: false };
+      const pen = this.state === 'setpiece' && this.setPieceKind === 'penalty';
+      this.shot = { team: p.team, player: p, type: plan.type, t: this.simT, dist: plan.dist, checked: false, pen };
+      this.noteShot(p);
       this.stadium.setExcite(0.35);
       if (plan.dist > 25 && rand() < 0.5) this.say(pick(['He tries his luck from range!', 'Long-range effort!']));
     }
@@ -747,6 +806,19 @@ export class Game {
         errA *= 1 - assist * 0.5;
         errH *= 1 - assist * 0.45;
         if (assist > 0) tz = clamp(tz, -(GOAL_HW - 0.35), GOAL_HW - 0.35);
+      }
+      const ps = this.penStress;
+      if (ps && !ps.done && p === ps.kicker && this.state === 'setpiece') {
+        const wob = this.penWobble();
+        const { over, under } = this.penMiskick(power);
+        const k = 1 + ps.stress * 0.9;
+        tz += wob.z * GOAL_HW;
+        height = Math.max(0.15, height + wob.y * GOAL_H * 0.5 + over * 9 - under * 1.2);
+        speedH *= 1 - Math.min(0.6, under * 1.4);
+        errA *= k;
+        errH *= k;
+        ps.done = true;
+        ps.aim = null;
       }
       if (this.nearestOpponentDist(p) < 2) errA += 0.03;
       const spd = Math.max(4, Number.isFinite(speedH) ? speedH : 12);
@@ -905,6 +977,7 @@ export class Game {
       o.stun = 0.6;
       o.model.stumble();
       o.kickCd = 0.6;
+      p.st.tackles++;
       if (rand() < 0.6) this.setOwner(p);
       else {
         this.owner = null;
@@ -979,6 +1052,7 @@ export class Game {
         return;
       }
       knock();
+      p.st.tackles++;
       o.stun = 1.4;
       o.model.fall();
       o.kickCd = 1;
@@ -1007,6 +1081,9 @@ export class Game {
     }
     this.simT += dt;
     this.stateT += dt;
+    if (this.penStress && this.state !== 'pens' && !(this.state === 'setpiece' && this.setPieceKind === 'penalty')) {
+      this.penStress = null;
+    }
 
     switch (this.state) {
       case 'kickoff':
@@ -1019,6 +1096,10 @@ export class Game {
         }
         break;
       case 'setpiece':
+        if (this.penStress) {
+          this.tickPenStress(dt, 2);
+          this.penAimInMatch(input);
+        }
         this.updateAll(dt, input, true);
         if (this.owner && this.owner.team.ai || this.owner?.isGK) {
           if (this.stateT > (this.subWindow ? 4.5 : 1.3) && !this.owner.pending) this.aiSetPiece(this.owner);
@@ -1074,7 +1155,7 @@ export class Game {
     this.clearCharges();
     this.sfx.whistle(true);
     const [a, b] = this.teams;
-    if (a.score === b.score && !this.pens) {
+    if (a.score === b.score && !this.pens && !this.allowDraw) {
       this.startPens();
       return;
     }
@@ -1100,7 +1181,7 @@ export class Game {
     }
     this.stadium.setExcite(0.8);
     this.sfx.swell(0.8, 5);
-    this.hud.fullTime(a, b, this.pens);
+    this.hud.fullTime(a, b, this.pens, recordMatchForm(this.matchRatings()));
   }
 
   // Moves everyone; `frozen` stops normal play logic (set pieces, kickoff, stoppages).
@@ -1248,7 +1329,7 @@ export class Game {
     }
 
     if (this.owner !== p) {
-      if (p.isGK && (pressed.has('slide') || pressed.has('tackle') && mlen > 0.25)) {
+      if (p.isGK && (pressed.has('dive') || pressed.has('slide') || pressed.has('tackle') && mlen > 0.25)) {
         this.humanDive(p, mlen > 0.2 ? mv.x : p.fx, mlen > 0.2 ? mv.z : p.fz);
       } else {
         if (pressed.has('tackle')) this.standingTackle(p);
@@ -1261,7 +1342,7 @@ export class Game {
     }
 
     for (const a of KICK_ACTIONS) {
-      if (pressed.has(a) && !h.charge) {
+      if ((pressed.has(a) || down.has(a)) && !h.charge) {
         if (this.isThrowIn() && this.owner === p) {
           if (a === 'through') h.charge = { key: a, type: 'through', power: 0 };
           else if (a === 'pass' || a === 'shot' || a === 'finesse') h.charge = { key: a, type: 'pass', power: 0 };
@@ -1335,6 +1416,7 @@ export class Game {
       kz = -p.pos.z;
       if (clen > 0.2) opts.aimZ = clamp(curve.z, -1, 1) * (GOAL_HW - 0.45);
       else if (mlen > 0.2 && Math.abs(mv.z) > 0.25) opts.aimZ = clamp(mv.z, -1, 1) * (GOAL_HW - 0.45);
+      else if (this.penStress && !this.penStress.done && p === this.penStress.kicker) opts.aimZ = 0;
     } else {
       kx = p.fx;
       kz = p.fz;
@@ -1464,7 +1546,7 @@ export class Game {
   aiSetPiece(p) {
     const k = this.setPieceKind;
     if (k === 'penalty') {
-      this.performKick(p, rand() < 0.35 ? 'finesse' : 'shot', 0.7 + rand() * 0.22, { aimZ: (rand() - 0.5) * 5.2 });
+      this.performKick(p, rand() < 0.35 ? 'finesse' : 'shot', this.penAiPower(), { aimZ: (rand() - 0.5) * 5.2 });
       return;
     }
     if (k === 'freekick') {
@@ -1774,6 +1856,14 @@ export class Game {
     return [teamX * d, worldZ];
   }
 
+  humanContesting(team, x, z, radius = 5.2) {
+    return this.humansOn(team).some((h) => {
+      const c = h.controlled;
+      if (!c || c.isGK) return false;
+      return hyp(c.pos.x - x, c.pos.z - z) < radius;
+    });
+  }
+
   aiOffBall(p, dt) {
     const t = p.team;
     const b = this.ball;
@@ -1786,8 +1876,9 @@ export class Game {
       this.steer(p, tx, tz, p.sprint, 0.3);
       return;
     }
+    const attacking = this.owner && this.owner.team === t || this.receiver && this.receiver.team === t;
     const sit = this.wingCrossSit();
-    if (sit && sit.team === t) {
+    if (sit && sit.team === t && attacking) {
       const run = this.boxRunTarget(p, sit);
       if (run) {
         const gap = hyp(run[0] - p.pos.x, run[1] - p.pos.z);
@@ -1795,19 +1886,15 @@ export class Game {
         return;
       }
     }
-    const ownsBall = this.owner && this.owner.team === t;
-    if (!ownsBall) {
+    if (!attacking) {
       const pack = this.pressPack(t);
       const rank = pack.indexOf(p);
-      const humanNear = this.humansOn(t).some((h) => {
-        const c = h.controlled;
-        if (!c) return false;
-        const ox = this.owner?.pos.x ?? b.pos.x;
-        const oz = this.owner?.pos.z ?? b.pos.z;
-        return hyp(c.pos.x - ox, c.pos.z - oz) < 8.5;
-      });
+      const hx = this.owner?.pos.x ?? b.pos.x;
+      const hz = this.owner?.pos.z ?? b.pos.z;
+      const humanNear = this.humanContesting(t, hx, hz, this.owner ? 6.5 : 5.2);
       if (rank === 0 && !humanNear) {
-        this.aiPress(p, dt);
+        if (!this.owner) this.aiChaseBall(p);
+        else this.aiPress(p, dt);
         return;
       }
       if (rank === 0 && humanNear) {
@@ -1815,12 +1902,13 @@ export class Game {
         return;
       }
       if (rank > 0) {
-        this.aiSupportPress(p, dt, rank);
+        if (!this.owner && rank === 1 && !humanNear) this.aiChaseBall(p);
+        else this.aiSupportPress(p, dt, rank);
         return;
       }
     }
     let [tx, tz] = this.teamTarget(p);
-    if (!ownsBall) {
+    if (!attacking) {
       const dBall = hyp(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
       const press = t.ai ? this.diff.press : 0.7;
       if (dBall < lerp(10, 17, press)) {
@@ -1828,26 +1916,37 @@ export class Game {
         tz = lerp(tz, b.pos.z, 0.16 * press);
       }
     }
-    if (!ownsBall && !this.owner && this.nearest(t, b.pos.x, b.pos.z, (m) => !m.isGK && !this.isHumanControlled(m)) === p) {
-      const lead = this.humans.find((h) => h.teamIdx === t.idx)?.controlled;
-      const leadD = lead ? hyp(b.pos.x - lead.pos.x, b.pos.z - lead.pos.z) : 99;
-      if (leadD > 8) {
-        tx = b.pos.x + b.vel.x * 0.25;
-        tz = b.pos.z + b.vel.z * 0.25;
-      }
+    if (!attacking && !this.owner && !this.humanContesting(t, b.pos.x, b.pos.z)
+      && this.nearest(t, b.pos.x, b.pos.z, (m) => !m.isGK && !this.isHumanControlled(m)) === p) {
+      tx = b.pos.x + b.vel.x * 0.25;
+      tz = b.pos.z + b.vel.z * 0.25;
     }
     const d = hyp(tx - p.pos.x, tz - p.pos.z);
     this.steer(p, tx, tz, d > 9 ? p.sprint * 0.9 : p.jog);
   }
 
-  aiPress(p, dt) {
+  aiChaseBall(p) {
     const b = this.ball;
+    const press = p.team.ai ? this.diff.press : 0.85;
+    const dist = hyp(b.pos.x - p.pos.x, b.pos.z - p.pos.z);
+    const tLook = Math.min(0.55, dist / Math.max(p.sprint, 0.01));
+    const tx = b.pos.x + b.vel.x * tLook;
+    const tz = b.pos.z + b.vel.z * tLook;
+    const chase = p.sprint * lerp(0.82, 1.0, press) * (p.team.ai ? this.diff.sprint : 1);
+    this.steer(p, tx, tz, chase, 0.28);
+  }
+
+  aiPress(p, dt) {
     const o = this.owner;
+    if (!o) {
+      this.aiChaseBall(p);
+      return 0;
+    }
     const press = this.diff.press;
-    const assist = o && o.team.human ? this.diff.assist : 0;
+    const assist = o.team.human ? this.diff.assist : 0;
     const ownX = -HALF_L * p.team.dir;
-    const cx = o ? o.pos.x : b.pos.x + b.vel.x * 0.2;
-    const cz = o ? o.pos.z : b.pos.z + b.vel.z * 0.2;
+    const cx = o.pos.x;
+    const cz = o.pos.z;
     const gx = ownX - cx;
     const gz = -cz;
     const gl = hyp(gx, gz) || 1;
@@ -1856,20 +1955,19 @@ export class Game {
     const dist = hyp(p.pos.x - cx, p.pos.z - cz);
     let gap = 2.15;
     let speed = p.jog;
-    if (dist > 9) {
-      gap = 3.4;
-      speed = p.sprint * lerp(0.72, 0.9, press) * this.diff.sprint;
-    } else if (dist > 3.2) {
-      gap = 2.3;
-      speed = p.jog * 1.12;
+    if (dist > 4.8) {
+      gap = dist > 10 ? 2.6 : 2.15;
+      speed = p.sprint * lerp(0.78, 0.98, press) * (p.team.ai ? this.diff.sprint : 1);
+    } else if (dist > 2.6) {
+      gap = 2.05;
+      speed = p.jog * 1.15;
     } else {
-      gap = 1.85;
-      speed = p.jog * 0.62;
+      gap = 1.7;
+      speed = p.jog * 0.7;
     }
     const tx = cx + nx * gap;
     const tz = cz + nz * gap * 0.7;
     const d = this.steer(p, tx, tz, speed, 0.42);
-    if (!o) return d;
     const od = hyp(o.pos.x - p.pos.x, o.pos.z - p.pos.z);
     const inFront = !this.fromBehind(p, o);
     const heavy = o.vel.length() > 7.4 || o.stamina < 0.28;
@@ -1992,6 +2090,8 @@ export class Game {
     } else if (slide && victim.vel.length() > 7.4) {
       reason = 'Dangerous slide from behind';
     }
+    offender.st.fouls++;
+    if (pen) offender.st.pensConceded++;
     this.book(offender, card, reason);
 
     const team = victim.team;
@@ -2009,6 +2109,7 @@ export class Game {
     if (kind === 'red' || secondYellow) {
       p.cards = 2;
       p.team.reds = (p.team.reds || 0) + 1;
+      p.st.red++;
       this.hud.card?.('red', p, secondYellow ? `Second yellow — ${reason}` : reason);
       this.say(`RED CARD! ${p.data.name} — ${secondYellow ? 'second yellow' : reason}`);
       this.sendOff(p);
@@ -2016,12 +2117,14 @@ export class Game {
     }
     p.cards = (p.cards || 0) + 1;
     p.team.yellows = (p.team.yellows || 0) + 1;
+    p.st.yellow++;
     this.hud.card?.('yellow', p, reason);
     this.say(`Yellow card — ${p.data.back} (${reason})`);
   }
 
   sendOff(p) {
     p.sentOff = true;
+    p.st.off = this.clock;
     if (this.owner === p) this.owner = null;
     if (this.receiver === p) this.receiver = null;
     for (const h of this.humans) {
@@ -2091,6 +2194,7 @@ export class Game {
     if (this.controlled === outP) this.controlled = np;
     if (this.owner === outP) this.setOwner(np, true);
     if (this.receiver === outP) this.receiver = np;
+    outP.st.off = this.clock;
     outP.dispose();
     team.bench = team.bench.filter((d) => d !== inData);
     team.subsLeft--;
@@ -2345,6 +2449,7 @@ export class Game {
       b.vel.y = 1 + rand() * 2;
       best.kickCd = 0.4;
       this.lastTouch = best.team;
+      if (this.shot && this.shot.team !== best.team) best.st.blocks++;
       this.say('Blocked!');
       return;
     }
@@ -2362,6 +2467,7 @@ export class Game {
     const defBox = Math.abs(p.pos.x + gx) < 20;
     p.kickCd = 0.5;
     this.lastTouch = p.team;
+    this.prevKick = this.lastKick;
     this.sfx.kick(0.3);
     if (attackBox) {
       const tz = (rand() < 0.5 ? -1 : 1) * (GOAL_HW - 0.5 - rand());
@@ -2371,6 +2477,7 @@ export class Game {
       b.vel.set(Math.cos(ang) * sp, -1 + rand() * 2.5, Math.sin(ang) * sp);
       this.shot = { team: p.team, player: p, type: 'header', t: this.simT, dist: hyp(gx - p.pos.x, p.pos.z), checked: false };
       this.lastKick = { type: 'header', team: p.team, player: p, t: this.simT };
+      this.noteShot(p);
       this.say(pick(['Header!', 'Rises highest!']));
     } else if (defBox) {
       b.vel.set(d * (8 + rand() * 4), 4 + rand() * 3, gauss() * 5);
@@ -2378,6 +2485,7 @@ export class Game {
     } else {
       b.vel.set(p.fx * 7 + gauss(), 1.5, p.fz * 7 + gauss());
       this.lastKick = { type: 'pass', team: p.team, player: p, t: this.simT };
+      p.st.passes++;
     }
     b.spin.set(0, 0, 0);
     p.model.s.headPitch = -0.6;
@@ -2409,6 +2517,12 @@ export class Game {
     }
     this.stadium.setExcite(0.55);
     this.sfx.swell(0.5, 2.5);
+    if (this.state !== 'pens') {
+      gk.st.saves++;
+      if (s.player) s.player.st.onTarget++;
+      if (s.player && s.pen) s.player.st.penMissed++;
+      this.lastPass = null;
+    }
     const catchable = bs < 21 && b.y > 0.2 && b.y < 2.0 && !gk.diving;
     if (catchable) {
       this.setOwner(gk);
@@ -2464,9 +2578,11 @@ export class Game {
     const s = this.shot;
     if (!s || this.simT - s.t > 3.5 || !byline) return;
     const b = this.ball.pos;
+    if (s.player && s.pen) s.player.st.penMissed++;
     if (Math.abs(b.z) < GOAL_HW + 2.5 && b.y < GOAL_H + 1.8) {
       this.say(b.y > GOAL_H ? pick(['Just over!', 'Over the bar!']) : pick(['Just wide!', 'Inches wide!', 'So close!']));
       this.nearMiss(1);
+      if (s.player && !s.pen && s.dist < 12) s.player.st.bigMiss++;
     } else if (Math.abs(b.z) < GOAL_HW + 7) this.say(pick(['Wide of the target.', 'Off target.']));
     this.shot = null;
   }
@@ -2475,6 +2591,15 @@ export class Game {
     team.score++;
     const lk = this.lastKick;
     const scorer = lk && lk.team === team ? lk.player : null;
+    if (scorer) {
+      scorer.st.goals++;
+      if (this.shot?.player !== scorer) scorer.st.shots++;
+      scorer.st.onTarget++;
+      const assist = this.assistFor(scorer, lk.t);
+      if (assist) assist.st.assists++;
+    } else if (lk?.player) lk.player.st.ownGoals++;
+    for (const p of this.opp(team).players) p.st.conceded++;
+    this.lastPass = null;
     this.state = 'goal';
     this.stateT = 0;
     this.goalT = this.simT;
@@ -2694,12 +2819,139 @@ export class Game {
     else this.ball.updateVisual(dt);
   }
 
+  // ------------------------------------------------------------------ penalty pressure
+
+  penComposure(p) {
+    const d = p.data;
+    if (p.isGK) return (d.ovr * 0.6 + d.def * 0.4) / 100;
+    const { fin } = shotTraits(d);
+    return (d.ovr * 0.4 + fin * 0.35 + d.sho * 0.25) / 100;
+  }
+
+  // Elite finishers (~0.9 composure) feel ~40% less pressure; poor finishers ~30% more.
+  penCalm(p) {
+    return lerp(1.3, 0.62, clamp((this.penComposure(p) - 0.6) / 0.32, 0, 1));
+  }
+
+  penSituation(team) {
+    const opp = this.opp(team);
+    if (this.state !== 'pens') {
+      const diff = team.score - opp.score;
+      const late = clamp((this.clock / 60 - 70) / 20, 0, 1);
+      const close = Math.abs(diff) <= 1;
+      const kick = 0.24 + (diff === -1 ? 0.12 : diff === 0 ? 0.08 : diff === 1 ? 0.03 : -0.06) + late * (close ? 0.26 : 0.06);
+      const tag = late > 0.5 && diff === -1 ? 'TO EQUALISE' : late > 0.5 && diff === 0 ? 'LATE WINNER' : '';
+      return { kick, keep: null, tag };
+    }
+    const P = this.pens;
+    const i = team.idx;
+    const after = (goal) => {
+      const taken = [...P.taken];
+      const scored = [...P.scored];
+      taken[i]++;
+      if (goal) scored[i]++;
+      return this.pensWinner(taken, scored);
+    };
+    const missLoses = after(false) === opp.idx;
+    const scoreWins = after(true) === i;
+    const sudden = P.taken[i] >= 5;
+    const round = Math.min(P.taken[i], 4) * 0.025;
+    return {
+      kick: 0.3 + round + (sudden ? 0.14 : 0) + (missLoses ? 0.24 : 0) + (scoreWins ? 0.16 : 0),
+      keep: 0.24 + round + (sudden ? 0.1 : 0) + (scoreWins ? 0.24 : 0) - (missLoses ? 0.06 : 0),
+      tag: missLoses ? 'MUST SCORE' : scoreWins ? 'TO WIN IT' : sudden ? 'SUDDEN DEATH' : '',
+    };
+  }
+
+  beginPenStress(kicker, keeper) {
+    const sit = this.penSituation(kicker.team);
+    const base = clamp(sit.kick * this.penCalm(kicker), 0, 1);
+    this.penStress = {
+      kicker,
+      keeper,
+      base,
+      stress: base,
+      keep: sit.keep == null || !keeper ? null : clamp(sit.keep * this.penCalm(keeper), 0, 1),
+      tag: sit.tag,
+      t: 0,
+      seed: rand() * 100,
+      done: false,
+      human: this.isHumanControlled(kicker),
+      showKeeper: !!keeper && sit.keep != null && this.isHumanControlled(keeper),
+      zone: this.penZone(base),
+      aim: null,
+    };
+  }
+
+  // Hesitating past `grace` seconds adds up to +0.3 stress.
+  tickPenStress(dt, grace) {
+    const s = this.penStress;
+    if (!s || s.done) return;
+    s.t += dt;
+    s.human = this.isHumanControlled(s.kicker);
+    s.stress = clamp(s.base + Math.min(0.3, Math.max(0, s.t - grace) * 0.1), 0, 1);
+    s.zone = this.penZone(s.stress);
+  }
+
+  // Aim drift in goal-relative units: z × GOAL_HW, y × half the bar height.
+  penWobble() {
+    const s = this.penStress;
+    if (!s) return { z: 0, y: 0 };
+    const k = s.stress;
+    const amp = 0.03 + k * k * 0.5;
+    const t = s.t * (1 + k * 0.9) + s.seed;
+    return {
+      z: amp * (Math.sin(t * 1.7) * 0.65 + Math.sin(t * 4.1 + 1.3) * 0.35),
+      y: amp * 0.7 * (Math.sin(t * 2.3 + 0.7) * 0.6 + Math.sin(t * 5.3) * 0.4),
+    };
+  }
+
+  penZone(k) {
+    const w = lerp(0.26, 0.09, k);
+    return { lo: 0.68 - w, hi: 0.68 + w };
+  }
+
+  // Power outside the sweet spot: `over` skies it, `under` scuffs it.
+  penMiskick(power) {
+    const z = this.penZone(this.penStress?.stress ?? 0);
+    return { over: Math.max(0, power - z.hi), under: Math.max(0, z.lo - power) };
+  }
+
+  penAiPower() {
+    const k = this.penStress?.stress ?? 0;
+    return clamp(0.68 + gauss() * 0.08 * Math.sqrt(this.diff.shotErr) * (0.6 + k), 0.25, 1);
+  }
+
+  penAimInMatch(input) {
+    const s = this.penStress;
+    if (!s || s.done || !s.human) {
+      if (s) s.aim = null;
+      return;
+    }
+    const inp = this.slotFrame(input, this.humanFor(s.kicker));
+    const mv = inp.move ?? { x: 0, z: 0 };
+    const cv = inp.curve ?? { x: 0, z: 0 };
+    const side = hyp(cv.x, cv.z) > 0.2 ? clamp(cv.z, -1, 1)
+      : hyp(mv.x, mv.z) > 0.2 && Math.abs(mv.z) > 0.25 ? clamp(mv.z, -1, 1) : 0;
+    const wob = this.penWobble();
+    s.aim = { x: HALF_L * s.kicker.team.dir, z: side * (GOAL_HW - 0.45) + wob.z * GOAL_HW, y: 1.2 + wob.y * GOAL_H * 0.5 };
+  }
+
+  pensAimPoint(aimSide, aimH) {
+    const wob = this.penWobble();
+    return {
+      z: clamp(aimSide, -1, 1) * (GOAL_HW - 0.28) + wob.z * GOAL_HW,
+      y: lerp(0.32, GOAL_H - 0.22, clamp(aimH, 0, 1)) + wob.y * GOAL_H * 0.5,
+    };
+  }
+
   // ------------------------------------------------------------------ penalties
 
   startPens() {
     this.state = 'pens';
     this.stateT = 0;
     this.owner = null;
+    this.penStress = null;
     this.celebration = null;
     this.clearCharges();
     this.pens = {
@@ -2717,8 +2969,12 @@ export class Game {
       jump: 0.45,
       charge: null,
       decided: false,
+      dived: false,
+      holdDive: false,
     };
     this.placePensIdle();
+    this.pens.keeper = this.teams[1].gk;
+    this.placePensKeeper(this.pens.keeper, true);
     this.hud.banner('PENALTY SHOOTOUT', 'Best of five · then sudden death', 2.8);
     this.hud.pensShow?.(true, this.teams);
     this.hud.pensUpdate?.(this.pens);
@@ -2732,26 +2988,42 @@ export class Game {
         p.stun = 0;
         p.slideT = 0;
         p.diving = null;
+        p.diveCd = 0;
         p.vel.set(0, 0, 0);
         p.want.set(0, 0, 0);
         p.model.setPose(POSE.NONE);
+        p.model.s.diveT = 0;
+        p.model.s.kickT = 0;
       }
     }
-    const spotX = PEN_SPOT;
-    this.teams[0].gk.pos.set(HALF_L - 0.45, 0, 0);
-    this.teams[0].gk.facing = -Math.PI / 2;
-    this.teams[1].gk.pos.set(-8, 0, 16);
-    this.teams[1].gk.facing = Math.PI / 2;
+    // Park outfield in the centre. Both GKs wait at the UNUSED (left) end —
+    // the original bug put the home keeper on the shootout line every kick,
+    // so two keepers stacked in the same net when the home side took.
     let i = 0;
     for (const p of this.players) {
       if (p.isGK) continue;
       const row = (i / 10) | 0;
       const col = i % 10;
-      p.pos.set(-18 + row * 6, 0, -22 + col * 4.6);
+      p.pos.set(-20 + row * 5.5, 0, -22 + col * 4.6);
       p.facing = Math.PI / 2;
       i++;
     }
-    this.ball.place(spotX, 0);
+    for (const t of this.teams) this.placePensKeeper(t.gk, false);
+    this.ball.place(PEN_SPOT, 0);
+  }
+
+  placePensKeeper(gk, defending) {
+    if (!gk) return;
+    if (defending) {
+      gk.pos.set(HALF_L - 0.4, 0, 0);
+      gk.facing = -Math.PI / 2;
+    } else {
+      gk.pos.set(-HALF_L + 0.5, 0, gk.team.idx === 0 ? -6 : 6);
+      gk.facing = Math.PI / 2;
+    }
+    gk.vel.set(0, 0, 0);
+    gk.want.set(0, 0, 0);
+    gk.diving = null;
   }
 
   nextPensTaker(team) {
@@ -2809,17 +3081,22 @@ export class Game {
     P.jump = 0.45;
     P.charge = null;
     P.aiShot = false;
+    P.dived = false;
+    P.holdDive = false;
+    P.cele = null;
+    P.celePop = false;
+    P.reactGoal = false;
     this.placePensIdle();
     kicker.pos.set(PEN_SPOT - 0.55, 0, 0);
     kicker.facing = Math.PI / 2;
-    keeper.pos.set(HALF_L - 0.4, 0, 0);
-    keeper.facing = -Math.PI / 2;
+    this.placePensKeeper(keeper, true);
     this.ball.place(PEN_SPOT, 0);
     this.setOwner(kicker, true);
     kicker.model.setPose(POSE.NONE);
     keeper.model.setPose(POSE.NONE);
     if (this.pensHumanShoots(team)) this.setControlled(kicker, this.shooterSlot(team));
     if (this.pensHumanKeeps(team)) this.setControlled(keeper, this.keeperSlot(team));
+    this.beginPenStress(kicker, keeper);
     this.say(`${kicker.data.name} — ${team.short}`);
     this.hud.pensUpdate?.(P);
   }
@@ -2842,6 +3119,8 @@ export class Game {
       if (p.diving) {
         p.diving.t += dt;
         p.want.set(0, 0, p.diving.vz * Math.max(0, 1 - p.diving.t / 0.7));
+        p.vel.z = p.want.z;
+        p.vel.x *= 0.9;
         if (p.diving.t > 1.15) {
           p.diving = null;
           p.stun = 0.2;
@@ -2852,16 +3131,16 @@ export class Game {
     if (P.phase === 'intro') {
       this.integrate(dt);
       this.updateBall(dt);
+      this.anchorPensKeepers();
       if (P.t > 2.7) this.pensNextKick();
       return;
     }
 
     if (P.phase === 'ready') this.updatePensReady(dt, input);
-    else if (P.phase === 'flight') this.updatePensFlight(dt);
+    else if (P.phase === 'flight') this.updatePensFlight(dt, input);
     else if (P.phase === 'react') {
-      this.integrate(dt);
-      this.updateBall(dt);
-      if (P.t > 2.5) {
+      this.updatePensReact(dt);
+      if (P.t > 1.85) {
         if (this.pensWinner() != null) this.pensFinish();
         else this.pensNextKick();
       }
@@ -2883,6 +3162,8 @@ export class Game {
     const keepH = this.pensHumanKeeps(team);
     const sInp = this.slotFrame(input, shootH ? this.shooterSlot(team) : null);
     const kInp = this.slotFrame(input, keepH ? this.keeperSlot(team) : null);
+    this.tickPenStress(dt, 1.6);
+    const ps = this.penStress;
 
     for (const p of this.players) {
       if (p !== kicker && p !== keeper) p.want.set(0, 0, 0);
@@ -2901,6 +3182,9 @@ export class Game {
       const pressed = sInp.pressed ?? new Set();
       const released = sInp.released ?? new Set();
       const down = sInp.down ?? new Set();
+      const side = clamp(aim.z, -1, 1);
+      const height = clamp(0.35 + Math.max(0, -aim.x) * 0.5 + (aim.x < -0.2 ? 0.15 : 0), 0.12, 0.95);
+      if (ps) ps.aim = { x: HALF_L, ...this.pensAimPoint(side, height) };
       for (const a of ['shot', 'power', 'finesse', 'chip']) {
         if (pressed.has(a) && !P.charge) {
           let type = a;
@@ -2913,8 +3197,6 @@ export class Game {
         c.power = Math.min(1, c.power + dt * CHARGE_RATE[c.type]);
         this.hud.power(c.power, KICK_LABEL[c.type]);
         if (released.has(c.key) || !down.has(c.key)) {
-          const side = clamp(aim.z, -1, 1);
-          const height = clamp(0.35 + Math.max(0, -aim.x) * 0.5 + (aim.x < -0.2 ? 0.15 : 0), 0.12, 0.95);
           this.pensStrike(c.type, Math.max(0.18, c.power), side, height);
         }
       } else this.hud.power(0, '');
@@ -2927,23 +3209,32 @@ export class Game {
         const side = (rand() * 2 - 1) * lerp(0.35, 0.92, acc);
         const height = lerp(0.25, 0.75, acc) + gauss() * 0.12 * this.diff.shotErr;
         const type = rand() < 0.2 ? 'power' : rand() < 0.35 ? 'finesse' : rand() < 0.15 ? 'chip' : 'shot';
-        this.pensStrike(type, lerp(0.55, 0.92, this.diff.shotPower), side, height);
+        this.pensStrike(type, this.penAiPower(), side, height);
       }
     }
 
     if (keepH) {
+      const down = kInp.down ?? new Set();
+      const pressed = kInp.pressed ?? new Set();
       const aim = hyp(km.x, km.z) > 0.12 ? km : { x: 0, z: 0 };
       P.dive = Math.abs(aim.z) > 0.18 ? Math.sign(aim.z) : 0;
-      P.jump = clamp(0.3 + Math.max(0, -aim.x) * 0.7, 0.15, 1);
-      keeper.want.set(0, 0, clamp(aim.z, -1, 1) * 1.8);
-      keeper.pos.z = clamp(keeper.pos.z, -GOAL_HW + 0.15, GOAL_HW - 0.15);
-      keeper.pos.x = HALF_L - 0.4;
+      P.jump = clamp(0.22 + Math.max(0, aim.x) * 0.78, 0.15, 1);
+      P.holdDive = this.pensDiveHeld(down);
+      if (!P.dived && !keeper.diving) {
+        keeper.want.set(0, 0, clamp(aim.z, -1, 1) * 1.8);
+        if (this.pensDivePressed(pressed)) this.startPensDive(keeper, P.dive, P.jump);
+      }
+      if (!shootH || !P.charge) {
+        const ready = P.dived ? 1 : 0.18 + Math.abs(aim.z) * 0.5 + Math.max(0, aim.x) * 0.32;
+        this.hud.power(ready, P.dived ? 'DIVING' : 'DIVE  J / X');
+      }
     } else {
       keeper.want.set(0, 0, 0);
     }
 
     this.integrate(dt);
     this.updateBall(dt);
+    this.anchorPensKeepers();
   }
 
   pensStrike(type, power, aimSide, aimH) {
@@ -2956,9 +3247,17 @@ export class Game {
     const { lon, fin } = shotTraits(p.data);
     const skill = type === 'power' ? lon / 100 : type === 'finesse' ? fin / 100 : sho;
     const gx = HALF_L;
-    let tz = clamp(aimSide, -1, 1) * (GOAL_HW - 0.28);
-    let ty = lerp(0.32, GOAL_H - 0.22, clamp(aimH, 0, 1));
-    let err = (0.03 + (1 - skill) ** 1.35 * 0.22) * (0.45 + power);
+    const ps = this.penStress;
+    const stress = ps?.stress ?? 0;
+    const pt = this.pensAimPoint(aimSide, aimH);
+    const { over, under } = this.penMiskick(power);
+    if (ps) {
+      ps.done = true;
+      ps.aim = null;
+    }
+    let tz = pt.z;
+    let ty = pt.y + over * 9 - under * 1.5;
+    let err = (0.03 + (1 - skill) ** 1.35 * 0.22) * (0.45 + power) * (1 + stress * 0.9);
     if (p.team.ai) err *= this.diff.shotErr;
     else err *= Math.max(0.35, 1 - this.diff.assist * 0.4);
     if (type === 'power') err *= 1.05;
@@ -2966,7 +3265,7 @@ export class Game {
     tz += gauss() * err * GOAL_HW;
     ty = clamp(ty + gauss() * err * 1.6, 0.15, GOAL_H + 1.8);
     const from = p.pos;
-    const T = type === 'chip' ? 0.95 : type === 'power' ? 0.42 : 0.55;
+    const T = (type === 'chip' ? 0.95 : type === 'power' ? 0.42 : 0.55) * (1 + under * 1.8);
     let vx = (gx - from.x) / T;
     let vz = (tz - from.z) / T;
     let vy = (ty - BALL_R) / T + 0.5 * 9.81 * T;
@@ -2985,14 +3284,62 @@ export class Game {
     this.commitPensDive(tz, ty);
   }
 
+  pensDivePressed(pressed) {
+    return pressed.has('dive') || pressed.has('slide') || pressed.has('tackle');
+  }
+
+  pensDiveHeld(down) {
+    return down.has('dive') || down.has('slide') || down.has('tackle');
+  }
+
+  lockPensKeeper(gk) {
+    if (!gk) return;
+    gk.pos.x = HALF_L - 0.4;
+    gk.pos.z = clamp(gk.pos.z, -GOAL_HW + 0.12, GOAL_HW - 0.12);
+    if (!gk.diving) gk.facing = -Math.PI / 2;
+  }
+
+  anchorPensKeepers() {
+    const P = this.pens;
+    if (!P) return;
+    for (const t of this.teams) {
+      const gk = t.gk;
+      if (!gk) continue;
+      if (gk === P.keeper) this.lockPensKeeper(gk);
+      else if (gk !== P.kicker) this.placePensKeeper(gk, false);
+    }
+  }
+
+  startPensDive(gk, side, jump) {
+    const P = this.pens;
+    if (!gk || !P || gk.diving) return;
+    const reach = (gk.data.def / 100) * lerp(0.7, 1.15, this.diff.gkSave);
+    const hop = jump ?? 0.45;
+    gk.diving = { t: 0, vz: side * (4.8 + reach * 3.2), jump: hop };
+    gk.diveCd = 2;
+    gk.model.dive(side, hop);
+    P.gkSide = side;
+    P.gkJump = hop;
+    P.dived = true;
+    rumble(0.4, 90, 0.35, this.padFor(gk));
+  }
+
   commitPensDive(ballZ, ballY) {
     const P = this.pens;
     const gk = P.keeper;
+    if (!gk) return;
     const keepH = this.pensHumanKeeps(P.team);
+    if (gk.diving || P.dived) return;
     let side = P.dive;
     let jump = P.jump;
-    if (!keepH) {
-      const read = this.diff.gkSave * (0.45 + gk.data.def / 200);
+    if (keepH) {
+      if (!P.holdDive) {
+        P.gkSide = 0;
+        P.gkJump = 0.2;
+        return;
+      }
+    } else {
+      const read = this.diff.gkSave * (0.45 + gk.data.def / 200) * (1 - (this.penStress?.keep ?? 0) * 0.2);
       if (rand() < read) {
         side = Math.abs(ballZ) < 0.45 ? 0 : Math.sign(ballZ);
         jump = clamp(ballY / GOAL_H, 0.2, 1);
@@ -3001,27 +3348,33 @@ export class Game {
         jump = 0.3 + rand() * 0.6;
       }
     }
-    const reach = (gk.data.def / 100) * lerp(0.7, 1.15, this.diff.gkSave);
-    gk.diving = { t: 0, vz: side * (4.8 + reach * 3.2), jump };
-    gk.diveCd = 2;
-    gk.model.dive(side || 1);
-    P.gkSide = side;
-    P.gkJump = jump;
+    this.startPensDive(gk, side, jump);
   }
 
-  updatePensFlight(dt) {
+  updatePensFlight(dt, input) {
     const P = this.pens;
+    const gk = P.keeper;
+    if (gk && this.pensHumanKeeps(P.team) && !P.dived) {
+      const kInp = this.slotFrame(input, this.keeperSlot(P.team));
+      const km = kInp.move ?? { x: 0, z: 0 };
+      const aim = hyp(km.x, km.z) > 0.12 ? km : { x: 0, z: 0 };
+      if (hyp(aim.x, aim.z) > 0.12) {
+        P.dive = Math.abs(aim.z) > 0.18 ? Math.sign(aim.z) : 0;
+        P.jump = clamp(0.22 + Math.max(0, aim.x) * 0.78, 0.15, 1);
+      }
+      if (this.pensDivePressed(kInp.pressed ?? new Set())) this.startPensDive(gk, P.dive, P.jump);
+    }
     this.integrate(dt);
     this.updateBall(dt);
+    this.anchorPensKeepers();
     const b = this.ball.pos;
-    const gk = P.keeper;
     if (gk && !this.owner) {
       const d = hyp(b.x - gk.pos.x, b.z - gk.pos.z);
       const hands = 0.95 + (P.gkJump ?? 0.4) * 0.7;
       if (d < 1.15 && b.y < 1.1 + hands && b.x > HALF_L - 3.2) {
         const skill = (gk.data.def / 100) * this.diff.gkSave;
         const linedUp = Math.abs(b.z - gk.pos.z) < lerp(1.6, 0.7, 1 - skill);
-        if (linedUp && rand() < clamp(0.22 + skill * 0.7, 0.15, 0.92)) {
+        if (linedUp && rand() < clamp(0.22 + skill * 0.7, 0.15, 0.92) * (1 - (this.penStress?.keep ?? 0) * 0.15)) {
           this.pensResolve(false, 'save');
           return;
         }
@@ -3039,21 +3392,28 @@ export class Game {
     const team = P.team;
     P.taken[team.idx]++;
     P.marks[team.idx].push(!!goal);
+    P.reactGoal = !!goal;
+    P.reactWhy = why;
+    P.celePop = false;
+    if (P.kicker) {
+      P.kicker.pending = null;
+      P.kicker.model.s.kickT = 0;
+      P.kicker.want.set(0, 0, 0);
+    }
     if (goal) {
       P.scored[team.idx]++;
       this.stadium.netHit(1, this.ball.pos.z, this.ball.pos.y, 0.7);
       this.sfx.swell(0.7, 2.2);
       this.shake = 0.55;
       rumble(0.55, 180, 0.6, this.padFor(P.kicker));
-      P.kicker.model.setPose(POSE.ARMS_UP);
-      P.keeper.model.setPose(POSE.HANDS_HEAD);
+      P.cele = shortCelebrationFor(P.kicker.data);
+      P.kicker.model.setPose(P.cele.pose);
       this.say(pick(['GOAL!', 'In the back of the net!', `${P.kicker.data.back} scores!`]));
     } else {
+      P.cele = null;
       P.kicker.model.setPose(POSE.HANDS_HEAD);
-      P.keeper.model.setPose(why === 'save' ? POSE.ARMS_UP : POSE.CLAP);
       if (why === 'save') {
         this.owner = P.keeper;
-        P.keeper.model.setPose(POSE.HOLD);
         this.say(pick([`${P.keeper.data.back} saves!`, 'What a stop!', 'Denied!']));
         rumble(0.4, 120, 0.35, this.padFor(P.keeper));
       } else {
@@ -3061,6 +3421,7 @@ export class Game {
       }
     }
     this.hud.setScore(this.teams[0].score, this.teams[1].score);
+    this.hud.power(0, '');
     this.hud.pensUpdate?.(P);
     P.phase = 'react';
     P.t = 0;
@@ -3068,10 +3429,46 @@ export class Game {
     this.owner = goal ? null : this.owner;
   }
 
-  pensWinner() {
+  updatePensReact(dt) {
     const P = this.pens;
-    const [ta, tb] = P.taken;
-    const [sa, sb] = P.scored;
+    const kicker = P.kicker;
+    const keeper = P.keeper;
+    for (const p of this.players) {
+      if (p === keeper && p.diving) continue;
+      p.want.set(0, 0, 0);
+      if (p !== keeper) p.vel.multiplyScalar(Math.exp(-dt * 8));
+    }
+    this.integrate(dt);
+    this.updateBall(dt);
+    this.anchorPensKeepers();
+    if (kicker) {
+      kicker.vel.set(0, 0, 0);
+      if (P.reactGoal && P.cele) {
+        kicker.model.setPose(P.cele.pose);
+        const face = 0.45;
+        kicker.facing += clamp(wrap(face - kicker.facing), -5 * dt, 5 * dt);
+        if (!P.celePop && P.t >= (P.cele.popupAt ?? 0.2)) {
+          P.celePop = true;
+          if (P.cele.popup) this.say(P.cele.popup);
+        }
+      } else {
+        kicker.model.setPose(POSE.HANDS_HEAD);
+        kicker.facing = Math.PI / 2;
+      }
+    }
+    if (keeper && !keeper.diving) {
+      keeper.pos.x = HALF_L - 0.4;
+      keeper.pos.z = clamp(keeper.pos.z, -GOAL_HW + 0.15, GOAL_HW - 0.15);
+      keeper.facing = -Math.PI / 2;
+      if (P.reactGoal) keeper.model.setPose(POSE.HANDS_HEAD);
+      else if (P.reactWhy === 'save') keeper.model.setPose(POSE.ARMS_UP);
+      else keeper.model.setPose(POSE.CLAP);
+    }
+  }
+
+  pensWinner(taken = this.pens.taken, scored = this.pens.scored) {
+    const [ta, tb] = taken;
+    const [sa, sb] = scored;
     if (ta >= 5 && tb >= 5) {
       if (ta === tb && sa !== sb) return sa > sb ? 0 : 1;
       return null;

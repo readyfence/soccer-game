@@ -26,12 +26,19 @@
       </div>
       <div id="commentary"></div>
       <div id="banner"><div id="banner-text"></div><div id="banner-sub"></div></div>
-      <div id="power"><div id="power-label"></div><div id="power-track"><div id="power-fill"></div></div></div>
+      <div id="power"><div id="power-label"></div><div id="power-track"><div id="power-fill"></div><div id="power-zone" class="hidden"></div></div></div>
+      <div id="stress" class="hidden">
+        <div class="st-head"><span class="st-lab">PRESSURE</span><span id="st-name"></span><b id="st-val">CALM</b></div>
+        <div class="st-track"><div id="st-fill"></div></div>
+        <div id="st-tag" class="st-tag"></div>
+        <div id="st-keep" class="st-keep hidden"><span class="st-lab">GK <em id="st-kname"></em></span><div class="st-track sm"><div id="st-kfill"></div></div></div>
+      </div>
       <div id="playercard" class="pc p1">
         <div class="pc-who">P1</div>
         <div id="pc-num">9</div>
         <div id="pc-body">
           <div id="pc-name">Player</div>
+          <div id="pc-form" class="pc-form hidden"></div>
           <div id="pc-stats"></div>
           <div class="stam"><span>SPRINT</span><div class="stam-track" id="pc-stam-track"><div id="pc-stam"></div></div></div>
         </div>
@@ -43,6 +50,7 @@
         <div id="pc2-num">9</div>
         <div id="pc-body">
           <div id="pc2-name">Player</div>
+          <div id="pc2-form" class="pc-form hidden"></div>
           <div id="pc2-stats"></div>
           <div class="stam"><span>SPRINT</span><div class="stam-track" id="pc2-stam-track"><div id="pc2-stam"></div></div></div>
         </div>
@@ -93,6 +101,11 @@
             <span class="mode-kicker">Local</span>
             <span class="mode-title">Two Player</span>
             <span class="mode-sub">You vs dad · two Xbox controllers</span>
+          </button>
+          <button type="button" class="mode-card" id="mode-wc" data-v="wc">
+            <span class="mode-kicker">Tournament</span>
+            <span class="mode-title">World Cup</span>
+            <span class="mode-sub">Pick a nation and play for the trophy</span>
           </button>
         </div>
         <button type="button" id="btn-coop" class="coop-link hidden">Both vs AI instead (co-op)</button>
@@ -154,6 +167,46 @@
           <span class="sep">·</span> Plug in an Xbox pad, then press a button
           <span class="sep safari-only hidden">·</span>
           <span class="safari-only hidden">Safari: open http://127.0.0.1:5173 and press any pad button</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="wc-pick" class="overlay hidden">
+      <div class="wc-inner">
+        <div class="wc-head">
+          <div>
+            <h2>World Cup</h2>
+            <p class="tip">Pick your nation. Sixteen teams, four groups, then knockout.</p>
+          </div>
+        </div>
+        <div class="club-grid" id="wc-grid"></div>
+        <div class="club-info" id="wc-info"></div>
+        <div class="wc-actions">
+          <button type="button" class="ghost" id="btn-wc-back">Back</button>
+          <button type="button" class="primary" id="btn-wc-start">Enter the Cup</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wc-hub" class="overlay hidden">
+      <div class="wc-inner wide">
+        <div class="wc-head">
+          <div>
+            <h2>World Cup</h2>
+            <p id="wc-phase" class="tip">Group Stage</p>
+          </div>
+          <div id="wc-you" class="wc-you"></div>
+        </div>
+        <div id="wc-status" class="wc-status"></div>
+        <div id="wc-next" class="wc-next"></div>
+        <div id="wc-groups" class="wc-groups"></div>
+        <div id="wc-results" class="wc-results"></div>
+        <div id="wc-bracket" class="wc-bracket hidden"></div>
+        <div class="wc-actions">
+          <button type="button" class="primary" id="btn-wc-play">Play next match</button>
+          <button type="button" class="primary hidden" id="btn-wc-new">New World Cup</button>
+          <button type="button" class="ghost" id="btn-wc-menu">Back to menu</button>
+          <button type="button" class="ghost danger" id="btn-wc-abandon">Quit World Cup</button>
         </div>
       </div>
     </div>
@@ -220,6 +273,9 @@
               <div class="xb-row bumps">
                 <span class="xb-tag">LT + Y bicycle (air / volley)</span>
               </div>
+              <div class="xb-row bumps">
+                <span class="xb-tag">X dive in pens (aim with stick)</span>
+              </div>
               <div class="xb-face">
                 <div class="xb-cluster">
                   <div class="stick">LS move</div>
@@ -242,7 +298,7 @@
             <table id="keys-pad"></table>
           </div>
         </div>
-        <p class="tip">Hold a kick button to charge power, release to kick. Bicycle kicks (B / LT+Y) only connect when the ball is in the air. Sprint uses a stamina bar — when it empties you can only jog until it fills, so pass to a fresh teammate. Left stick aims; right stick adds curve.</p>
+        <p class="tip">Hold a kick button to charge power, release to kick. Bicycle kicks (B / LT+Y) only connect when the ball is in the air. Sprint uses a stamina bar — when it empties you can only jog until it fills, so pass to a fresh teammate. Left stick aims; right stick adds curve. Penalties: aim the dive with the stick (or WASD) and press J / X to dive left, right, or stay. Penalty takers get a stress meter — big moments, weaker finishers and hesitating all raise it, making the aim ring wobble and shrinking the white power sweet spot (over it skies, under it scuffs).</p>
         <button class="primary" id="btn-help-close">Close</button>
       </div>
     </div>
@@ -309,8 +365,11 @@
         <h2>Full time</h2>
         <div id="ft-score"></div>
         <div id="ft-result"></div>
+        <div id="ft-potm"></div>
+        <div id="ft-tops"></div>
         <button class="primary" id="btn-rematch">Rematch</button>
         <button class="ghost" id="btn-menu">Change teams</button>
+        <button class="primary hidden" id="btn-ft-continue">Continue</button>
       </div>
     </div>
 

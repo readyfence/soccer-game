@@ -8,20 +8,72 @@ import {
 
 const crowdUniforms = { uTime: { value: 0 }, uExcite: { value: 0 } };
 
-function crowdMaterial() {
+function crowdMaterial(flashes) {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+  mat.customProgramCacheKey = () => (flashes ? 'crowd-flash' : 'crowd');
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = crowdUniforms.uTime;
     shader.uniforms.uExcite = crowdUniforms.uExcite;
-    shader.vertexShader = 'uniform float uTime;\nuniform float uExcite;\n' + shader.vertexShader.replace(
+    shader.vertexShader = 'uniform float uTime;\nuniform float uExcite;\nvarying float vFlash;\n' + shader.vertexShader.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
       float fid = float(gl_InstanceID);
       float h = fract(sin(fid * 12.9898) * 43758.5453);
       float speed = 2.5 + h * 5.0 + uExcite * 4.0;
       float bob = max(0.0, sin(uTime * speed + h * 6.2831));
-      transformed.y += bob * (0.03 + uExcite * 0.42 * step(0.25, h));`,
+      transformed.y += bob * (0.03 + uExcite * 0.42 * step(0.25, h));
+      float roll = fract(sin(fid * 78.233 + floor(uTime * 10.0 + h * 10.0) * 13.17) * 43758.5453);
+      vFlash = step(1.0 - 0.0002 - 0.0025 * uExcite * uExcite, roll);`,
     );
+    shader.fragmentShader = 'varying float vFlash;\n' + shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      ${flashes ? 'totalEmissiveRadiance += vec3(1.0, 0.97, 0.92) * vFlash * 30.0;' : ''}`,
+    );
+  };
+  return mat;
+}
+
+// Breaks up the flat pitch texture with world-space patchiness, blade detail and mowing-stripe sheen.
+function grassMaterial(map, bumpMap) {
+  const mat = new THREE.MeshStandardMaterial({ map, bumpMap, bumpScale: 0.6, roughness: 0.92, metalness: 0 });
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'varying vec3 vGrassPos;\n' + shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+      vGrassPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
+    );
+    shader.fragmentShader = `varying vec3 vGrassPos;
+      float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float gNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x),
+                   mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+      ` + shader.fragmentShader
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        vec2 gp = vGrassPos.xz;
+        float patches = gNoise(gp * 0.045) * 0.6 + gNoise(gp * 0.11) * 0.4;
+        float clumps = gNoise(gp * 0.9);
+        float blades = gNoise(gp * 9.0);
+        float isLine = smoothstep(0.35, 0.6, min(diffuseColor.r, diffuseColor.b) * 3.0);
+        vec3 grass = diffuseColor.rgb * (0.84 + 0.26 * patches + 0.1 * clumps + 0.08 * blades);
+        grass = mix(grass, grass * vec3(1.12, 1.04, 0.72), smoothstep(0.6, 0.85, patches) * 0.6);
+        float stripe = mod(floor((gp.x + ${HALF_L.toFixed(2)}) / ${((HALF_L * 2) / 20).toFixed(4)}), 2.0) * 2.0 - 1.0;
+        vec3 toCam = normalize(cameraPosition - vGrassPos);
+        grass *= 1.0 - stripe * toCam.z * 0.14;
+        grass = mix(vec3(dot(grass, vec3(0.2126, 0.7152, 0.0722))), grass, 0.82);
+        diffuseColor.rgb = mix(grass, diffuseColor.rgb, isLine);`,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor * (0.88 + 0.2 * clumps), 0.0, 1.0);`,
+      );
   };
   return mat;
 }
@@ -155,10 +207,10 @@ function buildStand(scene, { length, rows, position, rotY, mix, seatColor }) {
   const spacing = 0.62;
   const perRow = Math.floor(length / spacing);
   const count = perRow * rows;
-  const bodyGeo = new THREE.BoxGeometry(0.44, 0.62, 0.3);
+  const bodyGeo = new THREE.CapsuleGeometry(0.2, 0.24, 2, 6).scale(1.1, 1, 0.72);
   const headGeo = new THREE.IcosahedronGeometry(0.12, 1);
-  const bodyMat = crowdMaterial();
-  const headMat = crowdMaterial();
+  const bodyMat = crowdMaterial(true);
+  const headMat = crowdMaterial(false);
   const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, count);
   const heads = new THREE.InstancedMesh(headGeo, headMat, count);
   const skins = [0xf1c7a5, 0xd9a07a, 0xa86b45, 0x6e4228, 0xe8b894];
@@ -315,13 +367,7 @@ export function buildStadium(scene, renderer) {
   fill.position.set(40, 50, -40);
   scene.add(fill);
 
-  const grass = new THREE.MeshStandardMaterial({
-    map: pitchTexture(renderer),
-    bumpMap: grassBumpTexture(renderer),
-    bumpScale: 0.6,
-    roughness: 0.92,
-    metalness: 0,
-  });
+  const grass = grassMaterial(pitchTexture(renderer), grassBumpTexture(renderer));
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_W, GROUND_D), grass);
   pitch.rotation.x = -Math.PI / 2;
   pitch.receiveShadow = true;
