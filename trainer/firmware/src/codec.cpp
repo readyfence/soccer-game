@@ -372,6 +372,7 @@ std::string stateToJson(const TrainerState& s) {
   set["sound"] = s.settings.sound;
   set["brightness"] = s.settings.brightness;
   set["tz"] = s.settings.tzMinutes;
+  set["flipTilt"] = s.settings.flipTilt;
   std::string out;
   serializeJson(doc, out);
   return out;
@@ -400,6 +401,7 @@ bool stateFromJson(const char* json, TrainerState& s) {
   next.settings.sound = set["sound"] | true;
   next.settings.brightness = (uint8_t)clampi(set["brightness"] | 140, 20, 255);
   next.settings.tzMinutes = (int16_t)clampi(set["tz"] | 0, -14 * 60, 14 * 60);
+  next.settings.flipTilt = set["flipTilt"] | false;
   s = next;
   return true;
 }
@@ -426,6 +428,7 @@ bool rosterFromJson(const char* json, PlayerCard& p) {
 std::string dashboardJson(const TrainerState& s, int liveCadence, bool linked) {
   JsonDocument doc;
   doc["coach"] = s.settings.coach;
+  doc["sound"] = s.settings.sound;
   doc["linked"] = linked;
   doc["cadence"] = liveCadence;
   doc["energy"] = s.energy;
@@ -497,6 +500,7 @@ bool applySettingsJson(const char* json, TrainerState& s) {
   const char* coach = doc["coach"] | "";
   if (coach[0]) copyAscii(s.settings.coach, sizeof(s.settings.coach), coach);
   if (!doc["sound"].isNull()) s.settings.sound = doc["sound"] | true;
+  if (!doc["flipTilt"].isNull()) s.settings.flipTilt = doc["flipTilt"] | false;
   return true;
 }
 

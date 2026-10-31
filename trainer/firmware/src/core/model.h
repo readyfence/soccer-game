@@ -95,6 +95,7 @@ struct Settings {
   char coach[24] = "Huxley";
   bool sound = true;
   uint8_t brightness = 140;
+  bool flipTilt = false;  // for Tilt Dribble, if left/right feel reversed
   int16_t tzMinutes = 0;  // local offset from UTC, east positive
 };
 
