@@ -183,14 +183,14 @@ class GameScreen : public Screen {
     };
     c.fillRoundRect(16, 36, 288, 170, 14, PANEL);
     c.drawRoundRect(16, 36, 288, 170, 14, STAT_COL[gameStat(_game)]);
-    text(c, gameName(_game), W / 2, 62, MC, fTitle(), ACCENT);
-    text(c, HOW[_game][0], W / 2, 100, MC, fBody(), TEXT);
-    text(c, HOW[_game][1], W / 2, 122, MC, fBody(), TEXT);
+    text(c, gameName(_game), W / 2, 62, D_MC, fTitle(), ACCENT);
+    text(c, HOW[_game][0], W / 2, 100, D_MC, fBody(), TEXT);
+    text(c, HOW[_game][1], W / 2, 122, D_MC, fBody(), TEXT);
     if (_game == GAME_DRIBBLE && _t < 1.0f) {
-      text(c, "Hold it how you like...", W / 2, 160, MC, fSmall(), MUTED);
+      text(c, "Hold it how you like...", W / 2, 160, D_MC, fSmall(), MUTED);
     } else {
       bool blink = ((int)(_t * 2.5f)) % 2 == 0;
-      text(c, "TAP TO START", W / 2, 166, MC, fTitle(), blink ? GREEN : darker(GREEN, 0.3f));
+      text(c, "TAP TO START", W / 2, 166, D_MC, fTitle(), blink ? GREEN : darker(GREEN, 0.3f));
     }
     drawQuit(c);
   }
@@ -198,7 +198,7 @@ class GameScreen : public Screen {
   void drawDone(Canvas& c) {
     c.fillRoundRect(30, 40, 260, 160, 14, PANEL);
     c.drawRoundRect(30, 40, 260, 160, 14, ACCENT);
-    text(c, "Full time!", W / 2, 64, MC, fTitle(), ACCENT);
+    text(c, "Full time!", W / 2, 64, D_MC, fTitle(), ACCENT);
     char buf[40];
     switch (_game) {
       case GAME_PENALTY: snprintf(buf, sizeof(buf), "%d of 5 scored", _pen.goals()); break;
@@ -206,10 +206,10 @@ class GameScreen : public Screen {
       case GAME_KEEPY: snprintf(buf, sizeof(buf), "%d touches", _keepy.touches()); break;
       default: snprintf(buf, sizeof(buf), "%d tackles, %d let in", _tackle.tackles(), _tackle.conceded()); break;
     }
-    text(c, buf, W / 2, 98, MC, fBody(), TEXT);
+    text(c, buf, W / 2, 98, D_MC, fBody(), TEXT);
     snprintf(buf, sizeof(buf), "%d", score());
-    text(c, buf, W / 2, 140, MC, fHuge(), GREEN);
-    if (_t > 0.8f) text(c, "Tap to collect XP", W / 2, 182, MC, fSmall(), MUTED);
+    text(c, buf, W / 2, 140, D_MC, fHuge(), GREEN);
+    if (_t > 0.8f) text(c, "Tap to collect XP", W / 2, 182, D_MC, fSmall(), MUTED);
   }
 
   // ------------------------------------------------------------ penalties
@@ -258,7 +258,7 @@ class GameScreen : public Screen {
       c.drawCircle(ax, gb - 34, 11, ACCENT);
       c.drawFastVLine(ax, gb - 48, 28, ACCENT);
       c.drawFastHLine(ax - 14, gb - 34, 28, ACCENT);
-      text(c, "TAP to aim", W / 2, 150, MC, fTitle(), TEXT);
+      text(c, "TAP to aim", W / 2, 150, D_MC, fTitle(), TEXT);
     } else {
       int ax = 160 + (int)(g.lockedAim() * 100);
       if (g.phase() == PenaltyGame::POWER) c.drawCircle(ax, gb - 34, 10, WHITE);
@@ -273,12 +273,12 @@ class GameScreen : public Screen {
       c.fillRect(bx + 2, by + 2, 14, overY - by - 2, darker(RED, 0.2f));
       int py = by + (int)((1 - g.power()) * bh);
       c.fillRect(bx - 4, py - 2, 26, 5, WHITE);
-      text(c, "TAP for power", W / 2 - 14, 150, MC, fTitle(), TEXT);
+      text(c, "TAP for power", W / 2 - 14, 150, D_MC, fTitle(), TEXT);
     }
     if (g.phase() == PenaltyGame::RESULT) {
       static const char* const WORDS[] = {"", "GOAL!", "SAVED!", "WIDE!", "OVER!"};
       uint32_t col = g.lastOutcome() == PenaltyGame::GOAL ? ACCENT : WHITE;
-      text(c, WORDS[g.lastOutcome()], W / 2, 158, MC, fHuge(), col);
+      text(c, WORDS[g.lastOutcome()], W / 2, 158, D_MC, fHuge(), col);
     }
 
     // Shots so far
@@ -331,9 +331,9 @@ class GameScreen : public Screen {
     for (int i = 0; i < DribbleGame::LIVES; i++) c.fillCircle(14 + i * 18, 14, 6, i < g.lives() ? RED : DIM);
     char buf[16];
     snprintf(buf, sizeof(buf), "%d s", (int)ceilf(g.timeLeft()));
-    hudText(c, buf, W / 2 - 20, MC);
+    hudText(c, buf, W / 2 - 20, D_MC);
     snprintf(buf, sizeof(buf), "%d", g.points());
-    hudText(c, buf, 262, MR, ACCENT);
+    hudText(c, buf, 262, D_MR, ACCENT);
   }
 
   // ------------------------------------------------------------ keepy-uppy
@@ -355,10 +355,10 @@ class GameScreen : public Screen {
     }
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", g.touches());
-    text(c, buf, W / 2, 34, MC, fHuge(), WHITE);
+    text(c, buf, W / 2, 34, D_MC, fHuge(), WHITE);
     snprintf(buf, sizeof(buf), "%d s", (int)ceilf(g.timeLeft()));
-    text(c, buf, 10, 14, ML, fBody(), WHITE);
-    if (g.dropped()) text(c, "Dropped it!", W / 2, 120, MC, fBig(), WHITE);
+    text(c, buf, 10, 14, D_ML, fBody(), WHITE);
+    if (g.dropped()) text(c, "Dropped it!", W / 2, 120, D_MC, fBig(), WHITE);
   }
 
   // ------------------------------------------------------------ tackles
@@ -387,16 +387,16 @@ class GameScreen : public Screen {
       const TackleGame::Pop& p = g.pop(i);
       if (p.t <= 0) continue;
       int rise = (int)((0.7f - p.t) * 40);
-      text(c, p.goal ? "GOAL" : "TACKLE!", (int)p.x, (int)p.y - 20 - rise, MC, fBody(), p.goal ? RED : ACCENT);
+      text(c, p.goal ? "GOAL" : "TACKLE!", (int)p.x, (int)p.y - 20 - rise, D_MC, fBody(), p.goal ? RED : ACCENT);
     }
     c.fillRect(0, 0, W, 28, darker(BG, 0.1f));
     char buf[24];
     snprintf(buf, sizeof(buf), "Tackles %d", g.tackles());
-    hudText(c, buf, 8, ML, GREEN);
+    hudText(c, buf, 8, D_ML, GREEN);
     snprintf(buf, sizeof(buf), "%d s", (int)ceilf(g.timeLeft()));
-    hudText(c, buf, 150, MC);
+    hudText(c, buf, 150, D_MC);
     snprintf(buf, sizeof(buf), "Goals %d", g.conceded());
-    hudText(c, buf, 262, MR, g.conceded() ? RED : MUTED);
+    hudText(c, buf, 262, D_MR, g.conceded() ? RED : MUTED);
   }
 
   uint8_t _game = 0;

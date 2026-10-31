@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socker 26</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="vignette"></div>
+
+    <div id="hud" class="hidden">
+      <div id="scoreboard">
+        <div class="sb-team"><span class="badge sm" id="sb-home-badge"></span><span id="sb-home">HOM</span></div>
+        <div class="sb-score"><span id="sb-hs">0</span><span class="sep">-</span><span id="sb-as">0</span></div>
+        <div class="sb-team"><span id="sb-away">AWY</span><span class="badge sm" id="sb-away-badge"></span></div>
+        <div id="sb-clock">00:00</div>
+        <div id="sb-diff">PRO</div>
+        <div id="sb-book" title="Bookings"><span id="sb-y0">0</span><i class="yc"></i><span id="sb-r0">0</span><i class="rc"></i>
+          <b></b>
+          <span id="sb-y1">0</span><i class="yc"></i><span id="sb-r1">0</span><i class="rc"></i>
+        </div>
+        <div id="sb-outs" title="Subs every 7 outs">OUT 0/7</div>
+      </div>
+      <div id="commentary"></div>
+      <div id="banner"><div id="banner-text"></div><div id="banner-sub"></div></div>
+      <div id="power"><div id="power-label"></div><div id="power-track"><div id="power-fill"></div><div id="power-zone" class="hidden"></div></div></div>
+      <div id="stress" class="hidden">
+        <div class="st-head"><span class="st-lab">PRESSURE</span><span id="st-name"></span><b id="st-val">CALM</b></div>
+        <div class="st-track"><div id="st-fill"></div></div>
+        <div id="st-tag" class="st-tag"></div>
+        <div id="st-keep" class="st-keep hidden"><span class="st-lab">GK <em id="st-kname"></em></span><div class="st-track sm"><div id="st-kfill"></div></div></div>
+      </div>
+      <div id="playercard" class="pc p1">
+        <div class="pc-who">P1</div>
+        <div id="pc-num">9</div>
+        <div id="pc-body">
+          <div id="pc-name">Player</div>
+          <div id="pc-form" class="pc-form hidden"></div>
+          <div id="pc-stats"></div>
+          <div class="stam"><span>SPRINT</span><div class="stam-track" id="pc-stam-track"><div id="pc-stam"></div></div></div>
+        </div>
+        <div id="pc-ovr">80</div>
+        <i id="pc-card" class="book-mark hidden"></i>
+      </div>
+      <div id="playercard2" class="pc p2 hidden">
+        <div class="pc-who">P2</div>
+        <div id="pc2-num">9</div>
+        <div id="pc-body">
+          <div id="pc2-name">Player</div>
+          <div id="pc2-form" class="pc-form hidden"></div>
+          <div id="pc2-stats"></div>
+          <div class="stam"><span>SPRINT</span><div class="stam-track" id="pc2-stam-track"><div id="pc2-stam"></div></div></div>
+        </div>
+        <div id="pc2-ovr">80</div>
+        <i id="pc2-card" class="book-mark hidden"></i>
+      </div>
+      <canvas id="minimap" width="220" height="144"></canvas>
+      <div id="pens-board" class="hidden">
+        <div class="pens-title">Penalties</div>
+        <div class="pens-row">
+          <span class="pens-name" id="pens-n0">HOM</span>
+          <div class="pens-dots" id="pens-d0"></div>
+          <span class="pens-sc" id="pens-s0">0</span>
+        </div>
+        <div class="pens-row">
+          <span class="pens-name" id="pens-n1">AWY</span>
+          <div class="pens-dots" id="pens-d1"></div>
+          <span class="pens-sc" id="pens-s1">0</span>
+        </div>
+      </div>
+      <button type="button" id="btn-hud-quit">Quit Game</button>
+      <div id="hint">H / View — controls &nbsp;·&nbsp; P / Menu — pause &nbsp;·&nbsp; U — subs every 7 outs &nbsp;·&nbsp; Esc — quit</div>
+    </div>
+    <div id="pad-icon" class="hidden" title="Xbox controller connected" aria-hidden="true">
+      <svg viewBox="0 0 48 32" width="34" height="22"><path fill="currentColor" d="M9 14c3-7 7-9 15-9s12 2 15 9c2 5 5 8 7 8-3 3-7 2-10-1-2-2-6-3-12-3s-10 1-12 3c-3 3-7 4-10 1 2 0 5-3 7-8zm6.2 1.2c1.4 0 2.5 1.2 2.5 2.6S16.6 20.4 15.2 20.4 12.7 19.2 12.7 17.8s1.1-2.6 2.5-2.6zm17.6 0c1.4 0 2.5 1.2 2.5 2.6s-1.1 2.6-2.5 2.6-2.5-1.2-2.5-2.6 1.1-2.6 2.5-2.6z"/></svg>
+    </div>
+    <div id="nametag" class="hidden"><span class="tag-name"></span><i class="tag-stam"><b></b></i></div>
+    <div id="nametag2" class="hidden"><span class="tag-name"></span><i class="tag-stam"><b></b></i></div>
+    <div id="switch-tag" class="switch-tag hidden"><span class="sw-num"></span></div>
+    <div id="switch-tag2" class="switch-tag p2 hidden"><span class="sw-num"></span></div>
+
+    <div id="replay" class="hidden">
+      <div class="bar top"></div>
+      <div class="bar bottom"></div>
+      <div id="replay-badge">REPLAY</div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="menu-inner">
+        <h1>SOCKER<span>26</span></h1>
+        <div class="mode-pick" id="mode-pick">
+          <button type="button" class="mode-card on" id="mode-ai" data-v="1p">
+            <span class="mode-kicker">Play</span>
+            <span class="mode-title">Friendly</span>
+            <span class="mode-sub">One player against the computer</span>
+          </button>
+          <button type="button" class="mode-card" id="mode-2p" data-v="versus">
+            <span class="mode-kicker">Local</span>
+            <span class="mode-title">Two Player</span>
+            <span class="mode-sub">Two players · two Xbox controllers</span>
+          </button>
+          <button type="button" class="mode-card" id="mode-career" data-v="career">
+            <span class="mode-kicker">Career</span>
+            <span class="mode-title">Youth to Pro</span>
+            <span class="mode-sub">U8 to the Academy until a player turns pro</span>
+          </button>
+        </div>
+        <button type="button" id="btn-coop" class="coop-link hidden">Both vs AI instead (co-op)</button>
+        <div id="join-row" class="join-row hidden">
+          <div class="join-slot p1" id="join-p1">P1: press A to join</div>
+          <div class="join-slot p2" id="join-p2">P2: press A to join</div>
+        </div>
+        <p id="join-kb" class="join-kb hidden">Keyboard fallback: press 1 to join as P1, 2 as P2</p>
+        <div class="select-row">
+          <div class="side">
+            <h2 id="label-user">Your club</h2>
+            <p class="pick-hint">Local clubs from around Maple Grove</p>
+            <div class="club-grid" id="grid-user"></div>
+            <div class="club-info" id="info-user"></div>
+          </div>
+          <div class="vs">VS</div>
+          <div class="side">
+            <h2 id="label-ai">Opponent (AI)</h2>
+            <p class="pick-hint">Local clubs from around Maple Grove</p>
+            <div class="club-grid" id="grid-ai"></div>
+            <div class="club-info" id="info-ai"></div>
+          </div>
+        </div>
+        <div class="options">
+          <div class="opt opt-diff-wrap">
+            <label>Difficulty</label>
+            <div class="seg wrap" id="opt-diff">
+              <button type="button" data-v="beginner">Beginner</button>
+              <button type="button" data-v="amateur">Amateur</button>
+              <button type="button" data-v="semipro">Semi-Pro</button>
+              <button type="button" data-v="professional" class="on">Professional</button>
+              <button type="button" data-v="worldclass">World Class</button>
+              <button type="button" data-v="legendary">Legendary</button>
+              <button type="button" data-v="ultimate">Ultimate</button>
+            </div>
+            <p id="diff-blurb" class="diff-blurb">A fair match. The AI plays proper football without cheating.</p>
+          </div>
+          <div class="opt">
+            <label>Match length</label>
+            <div class="seg" id="opt-len">
+              <button data-v="3">3 min</button><button data-v="5" class="on">5 min</button><button data-v="8">8 min</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Graphics</label>
+            <div class="seg" id="opt-gfx">
+              <button data-v="auto" class="on">Auto</button><button data-v="0">Ultra</button><button data-v="2">Medium</button><button data-v="3">Performance</button>
+            </div>
+          </div>
+          <button id="btn-controls" class="ghost">Controls</button>
+          <button id="btn-start" class="primary">KICK OFF</button>
+          <button id="btn-trainer" class="ghost">Trainer</button>
+        </div>
+        <div id="menu-pad-hint">
+          <span class="xb-dot a"></span> Confirm
+          <span class="xb-dot b"></span> Back
+          <span class="sep">·</span> Left stick / D-pad move
+          <span class="sep">·</span> LB / RB switch clubs
+          <span class="sep">·</span> View controls
+          <span class="sep">·</span> Plug in an Xbox pad, then press a button
+          <span class="sep safari-only hidden">·</span>
+          <span class="safari-only hidden">Safari: press any pad button to wake the controller</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="career-new" class="overlay hidden">
+      <div class="wc-inner">
+        <div class="wc-head">
+          <div>
+            <h2>New Career</h2>
+            <p class="tip">Pick your home town. You start as an amateur U8 team and grow up together through U10, U12 and U14, then the Academy. The career ends when one of your players is called up to the pros.</p>
+          </div>
+        </div>
+        <div class="club-grid" id="career-towns"></div>
+        <div class="career-name">
+          <label for="career-nick">Team name</label>
+          <span id="career-town-label" class="career-town">Maple Grove</span>
+          <input id="career-nick" type="text" maxlength="20" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="wc-actions">
+          <button type="button" class="ghost" id="btn-career-back">Back</button>
+          <button type="button" class="primary" id="btn-career-start">Start career</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="career-hub" class="overlay hidden">
+      <div class="wc-inner wide">
+        <div class="wc-head">
+          <div>
+            <h2 id="career-title">Career</h2>
+            <p id="career-stage" class="tip">U8 · Rec League · Season 1</p>
+          </div>
+          <div id="career-you" class="wc-you"></div>
+        </div>
+        <div id="career-ladder" class="career-ladder"></div>
+        <div id="career-status" class="wc-status"></div>
+        <div id="career-report" class="career-report hidden"></div>
+        <div id="career-next" class="wc-next"></div>
+        <div class="career-cols">
+          <div>
+            <h3 class="trainer-h">League table</h3>
+            <div id="career-table"></div>
+            <h3 class="trainer-h">Results</h3>
+            <div id="career-results" class="career-results"></div>
+          </div>
+          <div>
+            <h3 class="trainer-h">Squad <span class="career-hint">tap a player to edit · ★ trained on the device</span></h3>
+            <div id="career-squad" class="career-squad"></div>
+          </div>
+        </div>
+        <div class="wc-actions">
+          <button type="button" class="primary" id="btn-career-play">Play next match</button>
+          <button type="button" class="primary hidden" id="btn-career-season">Finish season</button>
+          <button type="button" class="primary hidden" id="btn-career-again">New career</button>
+          <button type="button" class="ghost" id="btn-career-kits">Kits &amp; name</button>
+          <button type="button" class="ghost" id="btn-career-trainer">Trainer</button>
+          <button type="button" class="ghost" id="btn-career-menu">Back to menu</button>
+          <button type="button" class="ghost danger" id="btn-career-abandon">Start over</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="career-player" class="overlay hidden">
+      <div class="pause-inner editor">
+        <h2>Edit player</h2>
+        <div class="ed-grid">
+          <label for="ed-name">Name</label><input id="ed-name" type="text" maxlength="28" autocomplete="off" spellcheck="false" />
+          <label for="ed-num">Number</label><input id="ed-num" type="number" min="1" max="99" />
+          <label for="ed-pos">Position</label><select id="ed-pos"></select>
+          <label>Skin tone</label><div id="ed-tone" class="ed-swatches"></div>
+          <label for="ed-hair">Hair</label><select id="ed-hair"></select>
+          <label for="ed-hc">Hair colour</label><select id="ed-hc"></select>
+          <label for="ed-height">Height</label><div class="ed-range"><input id="ed-height" type="range" min="160" max="198" /><span id="ed-height-v"></span></div>
+          <label for="ed-cele">Celebration</label><select id="ed-cele"></select>
+          <label for="ed-swap">Swap places</label><select id="ed-swap"></select>
+        </div>
+        <div id="ed-stats" class="ed-stats"></div>
+        <div class="wc-actions">
+          <button type="button" class="ghost" id="btn-ed-cancel">Cancel</button>
+          <button type="button" class="primary" id="btn-ed-save">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="career-kit" class="overlay hidden">
+      <div class="pause-inner editor">
+        <h2>Kits &amp; name</h2>
+        <div class="ed-grid">
+          <label for="kit-nick">Team name</label>
+          <div class="career-name tight"><span id="kit-town" class="career-town"></span><input id="kit-nick" type="text" maxlength="20" autocomplete="off" spellcheck="false" /></div>
+        </div>
+        <div class="kit-cols">
+          <div class="kit-col" data-kit="home"><h3>Home</h3></div>
+          <div class="kit-col" data-kit="away"><h3>Away</h3></div>
+          <div class="kit-col" data-kit="gk"><h3>Goalkeeper</h3></div>
+        </div>
+        <p class="tip">Opponents switch to their away kit, or a plain one, if their colours are too close to yours. On away days you wear your away kit unless it clashes.</p>
+        <div class="wc-actions">
+          <button type="button" class="ghost" id="btn-kit-reset">Town colours</button>
+          <button type="button" class="ghost" id="btn-kit-cancel">Cancel</button>
+          <button type="button" class="primary" id="btn-kit-save">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="trainer" class="overlay hidden">
+      <div class="dream-inner trainer-inner">
+        <div class="dream-head">
+          <div>
+            <h2>Trainer</h2>
+            <p class="tip">Send a player from your career squad to the handheld trainer. Train him with mini games and real practice, then sync him back here.</p>
+          </div>
+        </div>
+        <div class="trainer-link">
+          <label for="trainer-host">Trainer address</label>
+          <input id="trainer-host" type="text" spellcheck="false" autocomplete="off" placeholder="soccer-trainer.local" />
+          <span id="trainer-status" class="trainer-status">Not checked</span>
+          <button type="button" class="ghost" id="btn-trainer-check">Check</button>
+        </div>
+        <p class="tip trainer-steps">On the trainer, tap <b>LINK</b> first. Both devices need to be on the same Wi-Fi.</p>
+        <div class="dream-body trainer-body">
+          <div class="dream-pool">
+            <h3 class="trainer-h">Send a player</h3>
+            <input id="trainer-search" type="search" placeholder="Find a player in your squad" autocomplete="off" />
+            <div id="trainer-list" class="dream-list"></div>
+          </div>
+          <div class="dream-pool">
+            <h3 class="trainer-h">Trained players</h3>
+            <div id="trainer-trained" class="dream-list"></div>
+            <button type="button" class="primary" id="btn-trainer-sync">Sync from Trainer</button>
+            <p class="tip trainer-steps">Sync brings back whoever is on the trainer now, with all the stats he has earned.</p>
+          </div>
+        </div>
+        <div class="dream-actions">
+          <button type="button" class="primary" id="btn-trainer-done">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="trainer-toast" class="hidden"></div>
+
+    <div id="help" class="overlay hidden">
+      <div class="help-inner">
+        <h2>Controls</h2>
+        <div class="help-cols">
+          <div>
+            <h3>Keyboard — attacking</h3>
+            <table id="keys-attack"></table>
+          </div>
+          <div>
+            <h3>Keyboard — defending &amp; general</h3>
+            <table id="keys-defend"></table>
+          </div>
+          <div>
+            <h3>Xbox controller</h3>
+            <div id="xbox-layout" class="xbox">
+              <div class="xb-row bumps">
+                <span class="xb-tag">LT finesse + B</span>
+                <span class="xb-tag">RT sprint (meter)</span>
+              </div>
+              <div class="xb-row bumps">
+                <span class="xb-tag">LB chip + B · tap switch</span>
+                <span class="xb-tag">RB power + B</span>
+              </div>
+              <div class="xb-row bumps">
+                <span class="xb-tag">LT + Y bicycle (air / volley)</span>
+              </div>
+              <div class="xb-row bumps">
+                <span class="xb-tag">X dive in pens (aim with stick)</span>
+              </div>
+              <div class="xb-face">
+                <div class="xb-cluster">
+                  <div class="stick">LS move</div>
+                  <div class="dpad">D-pad menus</div>
+                </div>
+                <div class="xb-center">
+                  <span>View</span>
+                  <span class="xb-brand">XBOX</span>
+                  <span>Menu</span>
+                </div>
+                <div class="xb-abxy">
+                  <i class="y">Y</i>
+                  <i class="x">X</i>
+                  <i class="a">A</i>
+                  <i class="b">B</i>
+                  <div class="stick rs">RS curve</div>
+                </div>
+              </div>
+            </div>
+            <table id="keys-pad"></table>
+          </div>
+        </div>
+        <p class="tip">Hold a kick button to charge power, release to kick. Bicycle kicks (B / LT+Y) only connect when the ball is in the air. Sprint uses a stamina bar — when it empties you can only jog until it fills, so pass to a fresh teammate. Left stick aims; right stick adds curve. Penalties: aim the dive with the stick (or WASD) and press J / X to dive left, right, or stay. Penalty takers get a stress meter — big moments, weaker finishers and hesitating all raise it, making the aim ring wobble and shrinking the white power sweet spot (over it skies, under it scuffs).</p>
+        <button class="primary" id="btn-help-close">Close</button>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Paused</h2>
+        <p id="pause-diff" class="tip">Professional</p>
+        <button class="primary" id="btn-resume">Resume</button>
+        <button class="ghost" id="btn-subs">Substitutions</button>
+        <button class="ghost" id="btn-quit">Quit Game</button>
+      </div>
+    </div>
+
+    <div id="halftime" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Half time</h2>
+        <p id="ht-score" class="tip">0 - 0</p>
+        <p class="tip">5 substitutions each. In play you can only change every 7 outs. Half time is always open.</p>
+        <button class="primary" id="btn-second-half">Second Half</button>
+        <button class="ghost" id="btn-ht-subs">Substitutions</button>
+      </div>
+    </div>
+
+    <div id="subs" class="overlay hidden">
+      <div class="subs-inner">
+        <h2>Substitutions</h2>
+        <p id="subs-meta" class="tip">5 left · pick a player off, then a player on</p>
+        <div class="subs-teams" id="subs-teams"></div>
+        <div class="subs-cols">
+          <div>
+            <h3>On the pitch</h3>
+            <div id="subs-out" class="subs-list"></div>
+          </div>
+          <div>
+            <h3>Bench</h3>
+            <div id="subs-in" class="subs-list"></div>
+          </div>
+        </div>
+        <div class="subs-actions">
+          <button class="primary" id="btn-sub-confirm">Make sub</button>
+          <button class="ghost" id="btn-sub-close">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ref-card" class="hidden">
+      <div id="ref-card-face" class="ref-card-face yellow"></div>
+      <div id="ref-card-name"></div>
+      <div id="ref-card-reason"></div>
+    </div>
+
+    <div id="quit-confirm" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Quit this match?</h2>
+        <p class="tip">The match will end and you'll go back to pick clubs. This cannot be undone.</p>
+        <button class="primary" id="btn-quit-cancel">Keep playing</button>
+        <button class="ghost danger" id="btn-quit-yes">Quit to team select</button>
+      </div>
+    </div>
+
+    <div id="fulltime" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Full time</h2>
+        <div id="ft-score"></div>
+        <div id="ft-result"></div>
+        <div id="ft-potm"></div>
+        <div id="ft-tops"></div>
+        <button class="primary" id="btn-rematch">Rematch</button>
+        <button class="ghost" id="btn-menu">Change teams</button>
+        <button class="primary hidden" id="btn-ft-continue">Continue</button>
+      </div>
+    </div>
+
+    <div id="reconnect" class="overlay hidden">
+      <div class="pause-inner">
+        <h2>Controller disconnected</h2>
+        <p id="reconnect-msg" class="tip">P2 controller disconnected, reconnect and press A</p>
+      </div>
+    </div>
+    <div id="pad-toast" class="hidden"></div>
+    <div id="loading" class="overlay"><div class="spinner"></div><div>Building stadium…</div></div>
+    <script>
+      window.addEventListener('error', (e) => {
+        const el = document.getElementById('loading');
+        if (!el || el.dataset.failed) return;
+        const src = e.filename || '';
+        if (!src.includes('/src/') && e.message !== 'Script error.') return;
+        el.dataset.failed = '1';
+        el.innerHTML = '<div>Could not start in this browser.</div><div style="margin-top:10px;opacity:.8">Try reloading, or use Chrome or Safari on a newer device.</div>';
+      });
+    </script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -185,7 +185,7 @@ export function ballTexture(renderer) {
 }
 
 const SPONSORS = [
-  ['CURSOR', '#0b0b0f', '#ffffff'],
+  ['HUX SPORTS', '#0b0b0f', '#ffffff'],
   ['VOLT ENERGY', '#00c853', '#04210f'],
   ['NOVA BANK', '#1a237e', '#ffd54f'],
   ['PIXEL AIR', '#ffffff', '#d50000'],
@@ -295,7 +295,7 @@ export function shirtTexture(renderer, kit, player) {
   g.closePath();
   g.fill();
 
-  const sponsor = ['CURSOR', 'VOLT', 'NOVA BANK', 'PIXEL AIR', 'ORBIT'][(kit.shirt >>> 3) % 5];
+  const sponsor = ['HUX SPORTS', 'VOLT', 'NOVA BANK', 'PIXEL AIR', 'ORBIT'][(kit.shirt >>> 3) % 5];
   g.font = 'italic 900 22px "Arial Black", Arial, sans-serif';
   g.fillText(sponsor, W / 2, 110, 104);
 

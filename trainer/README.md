@@ -16,13 +16,33 @@ Everything on the device is made up: no real clubs, players or brands.
 - An **M5Stack CoreS3** (ESP32-S3, 2" touch screen, built-in battery and motion sensor).
   This is the device in the photo.
 - A USB-C cable that carries data, not just charge.
-- A computer with **VS Code** and the **PlatformIO** extension. This is a one-time setup.
+- A computer with **Chrome** or **Edge** for the web installer (or VS Code with PlatformIO
+  if you want to change the code).
 - Home Wi-Fi that both the trainer and the game computer use. 2.4 GHz is needed; most home
   routers provide it.
 
 ## Putting the firmware on the CoreS3
 
 You only need to do this once, and again whenever the trainer code changes.
+
+### Easiest: the web installer (Chrome or Edge)
+
+1. Open the game's website and add `/flasher/` to the address
+   (for example `https://your-domain/flasher/`), in **Chrome** or **Edge** on a Mac or PC.
+   Safari and iPads can't talk to USB devices.
+2. Plug the CoreS3 in with a USB-C cable that carries data.
+3. Click **INSTALL**, pick the CoreS3 from the list, and wait about a minute.
+4. Tick **Erase** only on the very first install. When updating, leave it unticked so the
+   player, training history and Wi-Fi settings stay on the trainer.
+
+If the CoreS3 doesn't show up, hold its **reset button** (the small one on the side) for
+about 3 seconds until the green light comes on, then click INSTALL again.
+
+The installer files live in `public/flasher/` in the game. After changing the firmware,
+rebuild them with `trainer/firmware/tools/build-web-installer.sh` (needs git, curl and
+python3; it fetches the ESP32 toolchain from GitHub), commit, and redeploy the game.
+
+### With VS Code and PlatformIO (for working on the code)
 
 1. Install **VS Code** from <https://code.visualstudio.com>.
 2. In VS Code open **Extensions** (the four-squares icon), search for **PlatformIO IDE** and
@@ -35,9 +55,7 @@ You only need to do this once, and again whenever the trainer code changes.
    `Ctrl+Alt+U` (`Cmd+Alt+U` on a Mac). PlatformIO builds the firmware and copies it over.
 6. The trainer restarts and shows **"No player yet"**.
 
-If the upload can't find the device, hold the CoreS3's **reset button** (the small one on
-the side) for about 3 seconds until the green light comes on, which puts it in download
-mode, then click Upload again.
+If the upload can't find the device, use the reset-button trick above.
 
 From a terminal the same steps are `cd trainer/firmware && pio run -t upload`.
 
@@ -174,10 +192,10 @@ above).
 
 ## Known limitations
 
-- **Not yet built for the real device.** The firmware was written and compile-checked on a
-  PC: the UI against the real M5GFX headers, and `main.cpp`/`net.cpp` against M5Unified plus
-  stand-ins for the Arduino Wi-Fi libraries. Expect to fix small compile errors on the first
-  PlatformIO build.
+- **Compiled, but not yet run on a CoreS3.** The firmware builds cleanly for the CoreS3 with
+  the ESP32 Arduino core 2.0.17 (about 17% of the app space), but nobody has watched it run
+  on the device yet. If the screen stays blank or it restarts in a loop, plug it in, open the
+  serial monitor (PlatformIO's plug icon, 115200 baud) and send the output.
 - **The step and running thresholds were tuned on simulated data.** Use **MORE > STATS** and
   watch the sensor readout while Huxley walks and jogs with the trainer in a pocket. If
   running shows as walking (or the reverse), adjust `RUN_CADENCE` / `RUN_INTENSITY` in

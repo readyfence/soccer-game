@@ -151,7 +151,7 @@ void App::draw(Canvas& c) {
     int x = (W - w) / 2;
     c.fillRoundRect(x, 168, w, 32, 10, darker(PANEL2, 0.1f));
     c.drawRoundRect(x, 168, w, 32, 10, ACCENT);
-    textFit(c, _toast, W / 2, 184, w - 16, MC, fBody(), TEXT);
+    textFit(c, _toast, W / 2, 184, w - 16, D_MC, fBody(), TEXT);
   }
 }
 
@@ -179,15 +179,15 @@ void App::updateSwap(const Input& in) {
 void App::drawSwap(Canvas& c) {
   c.fillRoundRect(14, 24, 292, 190, 14, PANEL);
   c.drawRoundRect(14, 24, 292, 190, 14, ACCENT);
-  text(c, "New player!", W / 2, 46, MC, fTitle(), ACCENT);
+  text(c, "New player!", W / 2, 46, D_MC, fTitle(), ACCENT);
   char line[64];
   snprintf(line, sizeof(line), "%s wants to train.", trainer.pending().ascii);
-  textFit(c, line, W / 2, 84, 270, MC, fBody(), TEXT);
+  textFit(c, line, W / 2, 84, 270, D_MC, fBody(), TEXT);
   if (trainer.s.player.present) {
     snprintf(line, sizeof(line), "%s stays saved here.", trainer.s.player.ascii);
-    textFit(c, line, W / 2, 110, 270, MC, fSmall(), MUTED);
+    textFit(c, line, W / 2, 110, 270, D_MC, fSmall(), MUTED);
   }
-  text(c, "Swap?", W / 2, 132, MC, fBody(), TEXT);
+  text(c, "Swap?", W / 2, 132, D_MC, fBody(), TEXT);
   button(c, SWAP_YES, "YES", GREEN);
   button(c, SWAP_NO, "NO", GREY);
 }
@@ -201,11 +201,11 @@ void App::drawReward(Canvas& c) {
   c.drawRoundRect(10, 14, 300, 212, 14, levelled ? ACCENT : LINE);
   int y = 36;
   if (levelled) {
-    text(c, "LEVEL UP!", W / 2, y, MC, fBig(), ACCENT);
+    text(c, "LEVEL UP!", W / 2, y, D_MC, fBig(), ACCENT);
     y += 30;
-    textFit(c, _rewardTitle, W / 2, y, 280, MC, fBody(), MUTED);
+    textFit(c, _rewardTitle, W / 2, y, 280, D_MC, fBody(), MUTED);
   } else {
-    textFit(c, _rewardTitle, W / 2, y + 4, 280, MC, fTitle(), TEXT);
+    textFit(c, _rewardTitle, W / 2, y + 4, 280, D_MC, fTitle(), TEXT);
     y += 22;
   }
   y += 24;
@@ -216,15 +216,15 @@ void App::drawReward(Canvas& c) {
     if (g.xp[i] <= 0) continue;
     Stat st = (Stat)i;
     char buf[24];
-    text(c, statName(st), 26, y, ML, fBody(), STAT_COL[i]);
+    text(c, statName(st), 26, y, D_ML, fBody(), STAT_COL[i]);
     snprintf(buf, sizeof(buf), "+%d XP", g.xp[i]);
-    text(c, buf, 74, y, ML, fBody(), TEXT);
+    text(c, buf, 74, y, D_ML, fBody(), TEXT);
     int now = statNow(p, st);
     float frac = now >= 99 ? 1.0f : (float)p.xp[i] / (float)pointCost(now);
     bar(c, 160, y - 5, 80, 10, frac, STAT_COL[i]);
     if (g.points[i] > 0) {
       snprintf(buf, sizeof(buf), "%d", now);
-      text(c, buf, 290, y, MR, fTitle(), GREEN);
+      text(c, buf, 290, y, D_MR, fTitle(), GREEN);
       c.fillTriangle(252, y + 5, 260, y - 6, 268, y + 5, GREEN);
     }
     y += 28;
@@ -232,15 +232,15 @@ void App::drawReward(Canvas& c) {
   }
   if (!rows) {
     const char* msg = p.present ? "Nice work!" : "Logged! Send a player from the game to earn XP.";
-    textFit(c, msg, W / 2, y + 16, 280, MC, fBody(), TEXT);
+    textFit(c, msg, W / 2, y + 16, 280, D_MC, fBody(), TEXT);
     y += 40;
   }
   if (p.present && g.ovrAfter > g.ovrBefore && g.ovrBefore > 0) {
     char buf[32];
     snprintf(buf, sizeof(buf), "OVR %d  >  %d", g.ovrBefore, g.ovrAfter);
-    text(c, buf, W / 2, 190, MC, fTitle(), ACCENT);
+    text(c, buf, W / 2, 190, D_MC, fTitle(), ACCENT);
   }
-  if (_now - _rewardAt > 600) text(c, "Tap to continue", W / 2, 212, MC, fSmall(), MUTED);
+  if (_now - _rewardAt > 600) text(c, "Tap to continue", W / 2, 212, D_MC, fSmall(), MUTED);
 }
 
 }  // namespace ui

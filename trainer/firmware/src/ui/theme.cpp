@@ -61,7 +61,7 @@ void button(Canvas& c, const Rect& r, const char* label, uint32_t fill, bool ena
   c.fillRoundRect(r.x, r.y + 3, r.w, r.h - 3, 10, darker(f, 0.45f));
   c.fillRoundRect(r.x, r.y, r.w, r.h - 3, 10, f);
   uint32_t tc = enabled ? (isLight(f) ? BLACK : TEXT) : DIM;
-  textFit(c, label, r.cx(), r.y + (r.h - 3) / 2, r.w - 8, MC, font ? font : fBody(), tc);
+  textFit(c, label, r.cx(), r.y + (r.h - 3) / 2, r.w - 8, D_MC, font ? font : fBody(), tc);
 }
 
 void bar(Canvas& c, int x, int y, int w, int h, float frac, uint32_t fill, uint32_t back) {
@@ -91,8 +91,8 @@ void header(Canvas& c, const char* title, bool back, const char* right) {
     c.fillTriangle(14, 17, 28, 7, 28, 27, ACCENT);
     c.fillRect(26, 13, 18, 8, ACCENT);
   }
-  text(c, title, back ? 56 : 12, 17, ML, fTitle(), TEXT);
-  if (right) text(c, right, W - 10, 17, MR, fBody(), ACCENT);
+  text(c, title, back ? 56 : 12, 17, D_ML, fTitle(), TEXT);
+  if (right) text(c, right, W - 10, 17, D_MR, fBody(), ACCENT);
 }
 
 void drawBall(Canvas& c, int x, int y, int r, float spin) {

@@ -113,7 +113,7 @@ void drawAvatar(Canvas& c, int cx, int top, float s, const tr::PlayerCard& p, fl
   char num[4];
   snprintf(num, sizeof(num), "%u", (unsigned)p.num);
   c.setTextSize(s);
-  text(c, num, cx, Y(62), MC, fTitle(), p.kitNumber);
+  text(c, num, cx, Y(62), D_MC, fTitle(), p.kitNumber);
   c.setTextSize(1);
 
   // Neck and head

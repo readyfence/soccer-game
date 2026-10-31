@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Soccer Trainer Installer</title>
+    <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+    <style>
+      :root { --bg: #0b1220; --card: #141d31; --text: #eef2ff; --muted: #9aa6c4; --accent: #ffd400; --ok: #6ff0ad; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
+      main { max-width: 640px; margin: 0 auto; padding: 32px 16px 48px; }
+      h1 { font-size: 28px; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin: 0 0 24px; }
+      .card { background: var(--card); border-radius: 14px; padding: 18px 20px; margin-bottom: 16px; }
+      ol { padding-left: 22px; margin: 8px 0 0; }
+      li { margin-bottom: 8px; }
+      b { color: var(--accent); }
+      .warn { border-left: 4px solid var(--accent); }
+      .install { text-align: center; padding: 26px 20px; }
+      esp-web-install-button button[slot="activate"] {
+        background: linear-gradient(180deg, #ffe14d, #ffc400); color: #111; border: 0; border-radius: 8px;
+        padding: 14px 34px; font-size: 18px; font-weight: 900; letter-spacing: 2px; cursor: pointer;
+      }
+      .note { color: var(--muted); font-size: 14px; }
+      a { color: var(--ok); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Soccer Trainer</h1>
+      <p class="sub">Install or update the trainer on an M5Stack CoreS3, straight from this page.</p>
+
+      <div class="card install">
+        <esp-web-install-button manifest="./manifest.json">
+          <button slot="activate">INSTALL</button>
+          <span slot="unsupported">This browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a Mac or PC (not Safari, not an iPad).</span>
+          <span slot="not-allowed">USB access needs the secure (https) address of this page.</span>
+        </esp-web-install-button>
+      </div>
+
+      <div class="card">
+        <strong>How to install</strong>
+        <ol>
+          <li>Plug the CoreS3 into this computer with a USB-C <b>data</b> cable (some charging cables don't carry data).</li>
+          <li>Click <b>INSTALL</b> and pick the CoreS3 from the list (it may be called "USB JTAG/serial debug unit").</li>
+          <li>Wait about a minute until it says the install is done. The trainer restarts by itself.</li>
+        </ol>
+        <p class="note">If the CoreS3 doesn't show up or the install won't start, hold its <b>RESET</b> button (small button on the side) for about 3 seconds until the green light flashes, then click INSTALL again. Press RESET once more when it's finished.</p>
+      </div>
+
+      <div class="card warn">
+        <strong>Updating later? Don't tick "Erase".</strong>
+        <p class="note">The installer asks whether to erase the device. Only erase on the very first install. When updating, leave it unticked so Huxley's player, training history and Wi-Fi stay on the trainer.</p>
+      </div>
+
+      <div class="card">
+        <strong>After installing</strong>
+        <ol>
+          <li>On the trainer, tap <b>LINK</b> (on the home screen, or under <b>MORE</b>). The first time, it opens a Wi-Fi hotspot called <b>Soccer-Trainer</b>: join it with a phone and pick your home Wi-Fi.</li>
+          <li>In the game, open <b>Trainer</b>, pick a player from your career squad and press <b>SEND</b>.</li>
+        </ol>
+      </div>
+    </main>
+  </body>
+</html>

@@ -283,7 +283,7 @@ export class Game {
 
   nearMiss(amount) {
     this.stadium.setExcite(0.6 * amount);
-    this.sfx.swell(0.55 * amount, 2.5);
+    this.sfx.groan(amount);
   }
 
   // ------------------------------------------------------------------ restarts
@@ -334,6 +334,7 @@ export class Game {
     this.setOwner(st, true);
     if (kt.human) this.takeHuman(st);
     this.hud.banner(first ? 'KICK OFF' : '', first ? `${this.teams[0].name} vs ${this.teams[1].name}` : '', 1.6);
+    if (first) this.say(pick(["And we're under way!", 'Here we go, kick off!']));
     this.hud.outs?.(this.outsUntilSub(), this.subAllowed());
   }
 
@@ -987,6 +988,7 @@ export class Game {
         this.lastTouch = p.team;
       }
       rumble(0.48, 100, 0.55, this.padFor(p));
+      this.sfx.tackle();
       if (rand() < 0.5) this.say(pick([`Great tackle by ${p.data.back}!`, 'Won it back!', 'Timed to perfection!']));
     } else if (behind && this.shouldWhistle(p, o, { slide: false, wonBall: false })) {
       this.callFoul(p, o, { slide: false });
@@ -1059,6 +1061,7 @@ export class Game {
       o.model.fall();
       o.kickCd = 1;
       rumble(0.58, 130, 0.7, this.padFor(p));
+      this.sfx.tackle();
       this.say(pick(['Crunching slide tackle!', `What a challenge from ${p.data.back}!`, 'Sliding in — and wins it!']));
       this.stadium.setExcite(0.3);
     } else if (this.fromBehind(p, o) && this.shouldWhistle(p, o, { slide: true, wonBall: false })) {
@@ -1122,7 +1125,10 @@ export class Game {
         break;
       case 'halftime':
         this.updateAll(dt, input, true, true);
-        if (this.continueHalf || this.stateT > 16) this.startKickoff(1);
+        if (this.continueHalf || this.stateT > 16) {
+          this.startKickoff(1);
+          this.say('The second half is under way.');
+        }
         break;
       case 'fulltime':
         this.updateAll(dt, input, true, true);
@@ -1147,6 +1153,7 @@ export class Game {
     this.clearCharges();
     this.aiMakeSubs();
     this.sfx.whistle(true);
+    this.say("That's half time.");
     this.hud.banner('HALF TIME', `${this.teams[0].short} ${this.teams[0].score} - ${this.teams[1].score} ${this.teams[1].short}`, 2.4);
     this.hud.outs?.(0, true);
   }
@@ -1182,7 +1189,9 @@ export class Game {
       }
     }
     this.stadium.setExcite(0.8);
-    this.sfx.swell(0.8, 5);
+    this.sfx.applause(1.4);
+    this.say(a.score === b.score && !this.pens ? 'Full time. Honours even.'
+      : pick(["And that's full time!", 'Full time, and what a result!']));
     this.hud.fullTime(a, b, this.pens, recordMatchForm(this.matchRatings()));
   }
 
@@ -2470,7 +2479,7 @@ export class Game {
     p.kickCd = 0.5;
     this.lastTouch = p.team;
     this.prevKick = this.lastKick;
-    this.sfx.kick(0.3);
+    this.sfx.header();
     if (attackBox) {
       const tz = (rand() < 0.5 ? -1 : 1) * (GOAL_HW - 0.5 - rand());
       const err = (1 - p.data.sho / 100) * 0.25 * (p.team.ai ? this.diff.shotErr : 1 - this.diff.assist * 0.4);
@@ -2518,7 +2527,7 @@ export class Game {
       return;
     }
     this.stadium.setExcite(0.55);
-    this.sfx.swell(0.5, 2.5);
+    this.sfx.applause(1);
     if (this.state !== 'pens') {
       gk.st.saves++;
       if (s.player) s.player.st.onTarget++;
@@ -2615,7 +2624,8 @@ export class Game {
     rumble(0.75, 340, 0.9);
     this.stadium.setExcite(1);
     this.stadium.netHit(Math.sign(this.ball.pos.x), this.ball.pos.z, this.ball.pos.y, 1);
-    this.sfx.swell(1.3, 6);
+    this.sfx.net(1);
+    this.sfx.cheer(1.1);
     const name = scorer ? scorer.data.name : 'Own goal';
     let line = 'GOAL!';
     if (scorer) {
@@ -2630,6 +2640,7 @@ export class Game {
       }[type] ?? (dist > 24 ? 'From distance!' : pick(['Clinical finish!', 'Tucked away!', 'Back of the net!']));
     } else line = 'Own goal! Disaster!';
     this.say(line);
+    this.hud.sayTown?.(team.club?.town);
     this.hud.banner('GOAL!', scorer ? `${scorer.data.name}  ${Math.floor(this.clock / 60) + 1}'` : `Own goal — ${team.name}`, 3.2);
     this.hud.setScore(this.teams[0].score, this.teams[1].score);
     this.shot = null;
@@ -3405,7 +3416,8 @@ export class Game {
     if (goal) {
       P.scored[team.idx]++;
       this.stadium.netHit(1, this.ball.pos.z, this.ball.pos.y, 0.7);
-      this.sfx.swell(0.7, 2.2);
+      this.sfx.net(0.8);
+      this.sfx.cheer(0.7);
       this.shake = 0.55;
       rumble(0.55, 180, 0.6, this.padFor(P.kicker));
       P.cele = shortCelebrationFor(P.kicker.data);

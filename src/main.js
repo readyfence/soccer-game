@@ -169,7 +169,10 @@ function autoQuality(dt) {
 const ball = new Ball(scene, renderer);
 const sfx = new Sfx();
 const input = new Input();
-const unlockAudio = () => sfx.init();
+const unlockAudio = () => {
+  sfx.init();
+  commentary.preload();
+};
 window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 if (isSafari) {
@@ -286,7 +289,11 @@ function renderRatings(teams, list) {
 
 let bannerTimer = 0;
 const commentary = new Commentary();
+commentary.useAudio(sfx);
 const hud = {
+  sayTown(town) {
+    commentary.sayTown(town);
+  },
   say(text) {
     commentary.say(text);
     const el = document.createElement('div');

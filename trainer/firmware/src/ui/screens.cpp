@@ -24,18 +24,18 @@ static void statusBar(App& app, Canvas& c) {
     hal::localTime(h, m);
     int h12 = h % 12 == 0 ? 12 : h % 12;
     snprintf(buf, sizeof(buf), "%d:%02d %s", h12, m, h < 12 ? "am" : "pm");
-    text(c, buf, 6, 11, ML, fTiny(), MUTED);
+    text(c, buf, 6, 11, D_ML, fTiny(), MUTED);
   }
   int streak = currentStreak(app.trainer.s);
   if (streak > 1) {
     snprintf(buf, sizeof(buf), "%d day streak", streak);
-    text(c, buf, W / 2, 11, MC, fTiny(), ORANGE);
+    text(c, buf, W / 2, 11, D_MC, fTiny(), ORANGE);
   }
   int pct = hal::batteryPct();
   batteryIcon(c, W - 32, 4, pct, hal::charging());
   if (pct >= 0) {
     snprintf(buf, sizeof(buf), "%d%%", pct);
-    text(c, buf, W - 36, 11, MR, fTiny(), MUTED);
+    text(c, buf, W - 36, 11, D_MR, fTiny(), MUTED);
   }
 }
 
@@ -96,28 +96,28 @@ class HomeScreen : public Screen {
     drawAvatar(c, 58, 40, 1.0f, p, bob, _cheer > 0);
 
     // Name, position, overall
-    textFit(c, p.ascii, 118, 38, 140, ML, fTitle(), TEXT);
+    textFit(c, p.ascii, 118, 38, 140, D_ML, fTitle(), TEXT);
     char buf[40];
     snprintf(buf, sizeof(buf), "%s  %s", p.pos, p.club);
-    text(c, buf, 118, 60, ML, fSmall(), MUTED);
+    text(c, buf, 118, 60, D_ML, fSmall(), MUTED);
     c.fillRoundRect(264, 26, 52, 48, 8, ACCENT);
     snprintf(buf, sizeof(buf), "%d", ovrNow(p));
-    text(c, buf, 290, 44, MC, fBig(), BLACK);
-    text(c, "OVR", 290, 66, MC, fTiny(), BLACK);
+    text(c, buf, 290, 44, D_MC, fBig(), BLACK);
+    text(c, "OVR", 290, 66, D_MC, fTiny(), BLACK);
 
     // Stats with progress to the next point
     for (int i = 0; i < STAT_COUNT; i++) {
       Stat st = (Stat)i;
       int y = 88 + i * 21;
       int now = statNow(p, st);
-      text(c, statName(st), 118, y, ML, fBody(), STAT_COL[i]);
+      text(c, statName(st), 118, y, D_ML, fBody(), STAT_COL[i]);
       snprintf(buf, sizeof(buf), "%d", now);
-      text(c, buf, 172, y, MR, fBody(), TEXT);
+      text(c, buf, 172, y, D_MR, fBody(), TEXT);
       float frac = now >= 99 ? 1.0f : (float)p.xp[i] / (float)pointCost(now);
       bar(c, 180, y - 5, 104, 10, frac, STAT_COL[i]);
       if (p.train[i]) {
         snprintf(buf, sizeof(buf), "+%u", (unsigned)p.train[i]);
-        text(c, buf, 314, y, MR, fTiny(), GREEN);
+        text(c, buf, 314, y, D_MR, fTiny(), GREEN);
       }
     }
 
@@ -125,8 +125,8 @@ class HomeScreen : public Screen {
     char steps[16];
     fmtThousands(steps, sizeof(steps), s.today.steps);
     snprintf(buf, sizeof(buf), "%s steps", steps);
-    text(c, buf, 118, 176, ML, fBody(), TEXT);
-    text(c, "Energy", 250, 168, MC, fTiny(), MUTED);
+    text(c, buf, 118, 176, D_ML, fBody(), TEXT);
+    text(c, "Energy", 250, 168, D_MC, fTiny(), MUTED);
     pips(c, 214, 183, 10, s.energy, ACCENT, 3, 8);
 
     button(c, NAV[0], "PLAY", GREEN, s.energy > 0);
@@ -138,14 +138,14 @@ class HomeScreen : public Screen {
  private:
   void drawEmpty(App& app, Canvas& c) {
     const TrainerState& s = app.trainer.s;
-    text(c, "No player yet", W / 2, 44, MC, fTitle(), ACCENT);
-    text(c, "1. Tap LINK below", 24, 76, ML, fBody(), TEXT);
-    text(c, "2. In the game, open Trainer", 24, 100, ML, fBody(), TEXT);
-    text(c, "3. Press SEND on a player", 24, 124, ML, fBody(), TEXT);
+    text(c, "No player yet", W / 2, 44, D_MC, fTitle(), ACCENT);
+    text(c, "1. Tap LINK below", 24, 76, D_ML, fBody(), TEXT);
+    text(c, "2. In the game, open Trainer", 24, 100, D_ML, fBody(), TEXT);
+    text(c, "3. Press SEND on a player", 24, 124, D_ML, fBody(), TEXT);
     char steps[16], buf[40];
     fmtThousands(steps, sizeof(steps), s.today.steps);
     snprintf(buf, sizeof(buf), "Steps today: %s", steps);
-    text(c, buf, W / 2, 150, MC, fSmall(), MUTED);
+    text(c, buf, W / 2, 150, D_MC, fSmall(), MUTED);
     button(c, LINK_BTN, "LINK", GREEN);
     button(c, NAV[1], "LOG", BLUE);
     button(c, NAV[3], "MORE", GREY);
@@ -196,15 +196,15 @@ class PlayScreen : public Screen {
       c.fillRoundRect(r.x, r.y, r.w, r.h, 12, col);
       c.drawRoundRect(r.x, r.y, r.w, r.h, 12, ok ? STAT_COL[st] : LINE);
       drawIcon(c, (uint8_t)g, r.x + 30, r.y + r.h / 2, ok);
-      textFit(c, gameName((uint8_t)g), r.x + 58, r.y + 28, r.w - 62, ML, fBody(), ok ? TEXT : DIM);
+      textFit(c, gameName((uint8_t)g), r.x + 58, r.y + 28, r.w - 62, D_ML, fBody(), ok ? TEXT : DIM);
       char buf[12];
       snprintf(buf, sizeof(buf), "+%s", statName(st));
-      text(c, buf, r.x + 58, r.y + 52, ML, fBody(), ok ? STAT_COL[st] : DIM);
+      text(c, buf, r.x + 58, r.y + 52, D_ML, fBody(), ok ? STAT_COL[st] : DIM);
     }
     const char* msg = !s.player.present ? "Send a player from the game first"
                       : ok              ? "Each game uses 1 energy"
                                         : "Walk or log training to earn energy";
-    textFit(c, msg, W / 2, 220, 300, MC, fSmall(), ok ? MUTED : ACCENT);
+    textFit(c, msg, W / 2, 220, 300, D_MC, fSmall(), ok ? MUTED : ACCENT);
   }
 
  private:
@@ -292,9 +292,9 @@ class LogScreen : public Screen {
         uint32_t col = STAT_COL[mainStat((uint8_t)i)];
         c.fillRoundRect(r.x, r.y, r.w, r.h, 10, PANEL2);
         c.fillRoundRect(r.x, r.y, r.w, 8, 4, col);
-        textFit(c, shortActivity((uint8_t)i), r.cx(), r.y + 42, r.w - 6, MC, fBody(), TEXT);
+        textFit(c, shortActivity((uint8_t)i), r.cx(), r.y + 42, r.w - 6, D_MC, fBody(), TEXT);
       }
-      text(c, "Pick the training you just did", W / 2, 214, MC, fSmall(), MUTED);
+      text(c, "Pick the training you just did", W / 2, 214, D_MC, fSmall(), MUTED);
       return;
     }
     header(c, activityName((uint8_t)_act));
@@ -313,9 +313,9 @@ class LogScreen : public Screen {
       strncat(line, part, sizeof(line) - strlen(line) - 1);
     }
     if (app.trainer.s.player.present) {
-      text(c, line, W / 2, 164, MC, fBody(), GREEN);
+      text(c, line, W / 2, 164, D_MC, fBody(), GREEN);
     } else {
-      text(c, "No player yet - it still counts!", W / 2, 164, MC, fSmall(), MUTED);
+      text(c, "No player yet - it still counts!", W / 2, 164, D_MC, fSmall(), MUTED);
     }
     button(c, LOG_IT, "LOG IT", GREEN, true, fTitle());
   }
@@ -374,9 +374,9 @@ class PlanScreen : public Screen {
     Drill drills[DRILLS_PER_DAY];
     int n = todaysDrills(s, drills);
     if (!n) {
-      text(c, "Rest day!", W / 2, 84, MC, fBig(), GREEN);
-      text(c, "Rest helps you grow.", W / 2, 120, MC, fBody(), TEXT);
-      text(c, "Walking still earns energy.", W / 2, 144, MC, fSmall(), MUTED);
+      text(c, "Rest day!", W / 2, 84, D_MC, fBig(), GREEN);
+      text(c, "Rest helps you grow.", W / 2, 120, D_MC, fBody(), TEXT);
+      text(c, "Walking still earns energy.", W / 2, 144, D_MC, fSmall(), MUTED);
     }
     for (int i = 0; i < n; i++) {
       int y = 44 + i * 50;
@@ -385,10 +385,10 @@ class PlanScreen : public Screen {
       c.fillRoundRect(6, y, 8, 44, 4, STAT_COL[mainStat(drills[i].act)]);
       char buf[32];
       snprintf(buf, sizeof(buf), "%s  %u min", activityName(drills[i].act), (unsigned)drills[i].minutes);
-      textFit(c, buf, 22, y + 22, 210, ML, fBody(), done ? MUTED : TEXT);
+      textFit(c, buf, 22, y + 22, 210, D_ML, fBody(), done ? MUTED : TEXT);
       button(c, doneBtn(i), done ? "DONE" : "I DID IT", done ? GREEN : BLUE, !done, fTiny());
     }
-    if (!known) text(c, "Tap LINK once to set the day", W / 2, 186, MC, fSmall(), ACCENT);
+    if (!known) text(c, "Tap LINK once to set the day", W / 2, 186, D_MC, fSmall(), ACCENT);
 
     // Week strip
     for (int d = 0; d < 7; d++) {
@@ -396,7 +396,7 @@ class PlanScreen : public Screen {
       bool any = s.program.days[d][0].minutes || s.program.days[d][1].minutes || s.program.days[d][2].minutes;
       c.fillCircle(x, y, 14, any ? PANEL2 : BG);
       if (known && d == today) c.drawCircle(x, y, 15, ACCENT);
-      text(c, WEEKDAY_LETTER[d], x, y, MC, fBody(), any ? TEXT : DIM);
+      text(c, WEEKDAY_LETTER[d], x, y, D_MC, fBody(), any ? TEXT : DIM);
     }
 
     if (_confirm >= 0) {
@@ -404,8 +404,8 @@ class PlanScreen : public Screen {
       c.drawRoundRect(20, 50, 280, 150, 14, ACCENT);
       char q[48];
       snprintf(q, sizeof(q), "%u min of %s?", (unsigned)drills[_confirm].minutes, activityName(drills[_confirm].act));
-      text(c, "Did you do", W / 2, 76, MC, fBody(), MUTED);
-      textFit(c, q, W / 2, 102, 260, MC, fTitle(), TEXT);
+      text(c, "Did you do", W / 2, 76, D_MC, fBody(), MUTED);
+      textFit(c, q, W / 2, 102, 260, D_MC, fTitle(), TEXT);
       button(c, YES, "YES", GREEN);
       button(c, NO, "NOT YET", GREY);
     }
@@ -479,7 +479,7 @@ class MoreScreen : public Screen {
     button(c, moreBtn(4), buf, PANEL2);
     button(c, moreBtn(5), set.flipTilt ? "TILT: FLIPPED" : "TILT: NORMAL", PANEL2);
     snprintf(buf, sizeof(buf), "Coach %s", set.coach);
-    text(c, buf, W / 2, 222, MC, fSmall(), MUTED);
+    text(c, buf, W / 2, 222, D_MC, fSmall(), MUTED);
   }
 };
 
@@ -503,8 +503,8 @@ class StatsScreen : public Screen {
     const DayLog& d = s.today;
     int y = 52;
     auto row = [&](const char* label, const char* value) {
-      text(c, label, 10, y, ML, fSmall(), MUTED);
-      text(c, value, 150, y, MR, fBody(), TEXT);
+      text(c, label, 10, y, D_ML, fSmall(), MUTED);
+      text(c, value, 150, y, D_MR, fBody(), TEXT);
       y += 22;
     };
     fmtThousands(num, sizeof(num), d.steps);
@@ -540,17 +540,17 @@ class StatsScreen : public Screen {
       uint32_t col = vals[i] >= 5000 ? GREEN : BLUE;
       if (h > 0) c.fillRoundRect(x, base - h, bw, h, 3, i == 6 ? ACCENT : col);
       const char* letter = dayKeyValid(keys[i]) ? WEEKDAY_LETTER[weekdayMon0(keys[i])] : "-";
-      text(c, letter, x + bw / 2, base + 10, MC, fTiny(), MUTED);
+      text(c, letter, x + bw / 2, base + 10, D_MC, fTiny(), MUTED);
     }
-    text(c, "Steps, last 7 days", 240, 46, MC, fTiny(), MUTED);
+    text(c, "Steps, last 7 days", 240, 46, D_MC, fTiny(), MUTED);
 
     // Live sensor readout for tuning running detection.
     c.fillRoundRect(6, 190, 308, 46, 8, PANEL);
     snprintf(buf, sizeof(buf), "Cadence %d/min  Hit %.2fg", app.steps.cadence(), app.steps.intensity());
-    text(c, buf, 14, 204, ML, fTiny(), TEXT);
+    text(c, buf, 14, 204, D_ML, fTiny(), TEXT);
     const char* mode = !app.steps.moving() ? "STILL" : (app.steps.running() ? "RUNNING" : "WALKING");
-    text(c, mode, 306, 204, MR, fBody(), app.steps.running() ? ORANGE : (app.steps.moving() ? GREEN : DIM));
-    text(c, "Sensor check: walk or jog with it in a pocket", 14, 224, ML, fTiny(), MUTED);
+    text(c, mode, 306, 204, D_MR, fBody(), app.steps.running() ? ORANGE : (app.steps.moving() ? GREEN : DIM));
+    text(c, "Sensor check: walk or jog with it in a pocket", 14, 224, D_ML, fTiny(), MUTED);
   }
 };
 
@@ -599,26 +599,26 @@ class LinkScreen : public Screen {
       case hal::Net::Connecting: {
         int dots = (int)((hal::ms() - _start) / 400) % 4;
         snprintf(buf, sizeof(buf), "Joining %s%.*s", hal::netSsid(), dots, "...");
-        textFit(c, buf, W / 2, 100, 300, MC, fTitle(), TEXT);
-        text(c, "Hold on...", W / 2, 134, MC, fSmall(), MUTED);
+        textFit(c, buf, W / 2, 100, 300, D_MC, fTitle(), TEXT);
+        text(c, "Hold on...", W / 2, 134, D_MC, fSmall(), MUTED);
         break;
       }
       case hal::Net::Linked: {
         snprintf(buf, sizeof(buf), "http://%s/", hal::netIp());
         c.fillRect(6, 42, 116, 116, WHITE);
         c.qrcode(buf, 8, 44, 112);
-        text(c, "Parents:", 64, 170, MC, fTiny(), MUTED);
-        text(c, "scan for dashboard", 64, 184, MC, fTiny(), MUTED);
-        text(c, "Linked!", 132, 52, ML, fBig(), GREEN);
-        text(c, "In the game open", 132, 84, ML, fSmall(), TEXT);
-        text(c, "Trainer, then press", 132, 104, ML, fSmall(), TEXT);
-        text(c, "SEND or SYNC", 132, 126, ML, fBody(), ACCENT);
-        text(c, hal::netHost(), 132, 154, ML, fSmall(), MUTED);
+        text(c, "Parents:", 64, 170, D_MC, fTiny(), MUTED);
+        text(c, "scan for dashboard", 64, 184, D_MC, fTiny(), MUTED);
+        text(c, "Linked!", 132, 52, D_ML, fBig(), GREEN);
+        text(c, "In the game open", 132, 84, D_ML, fSmall(), TEXT);
+        text(c, "Trainer, then press", 132, 104, D_ML, fSmall(), TEXT);
+        text(c, "SEND or SYNC", 132, 126, D_ML, fBody(), ACCENT);
+        text(c, hal::netHost(), 132, 154, D_ML, fSmall(), MUTED);
         snprintf(buf, sizeof(buf), "or %s", hal::netIp());
-        text(c, buf, 132, 174, ML, fSmall(), MUTED);
+        text(c, buf, 132, 174, D_ML, fSmall(), MUTED);
         if (app.trainer.s.player.present) {
           snprintf(buf, sizeof(buf), "Training: %s", app.trainer.s.player.ascii);
-          textFit(c, buf, W / 2, 218, 300, MC, fSmall(), TEXT);
+          textFit(c, buf, W / 2, 218, 300, D_MC, fSmall(), TEXT);
         }
         break;
       }
@@ -626,32 +626,32 @@ class LinkScreen : public Screen {
         snprintf(buf, sizeof(buf), "WIFI:T:nopass;S:%s;;", hal::netPortalName());
         c.fillRect(6, 42, 116, 116, WHITE);
         c.qrcode(buf, 8, 44, 112);
-        text(c, "1. On a phone, join", 132, 52, ML, fSmall(), TEXT);
-        text(c, hal::netPortalName(), 132, 74, ML, fBody(), ACCENT);
-        text(c, "2. A page opens", 132, 100, ML, fSmall(), TEXT);
-        text(c, "(or go to 192.168.4.1)", 132, 120, ML, fTiny(), MUTED);
-        text(c, "3. Pick your home", 132, 144, ML, fSmall(), TEXT);
-        text(c, "Wi-Fi and save", 132, 164, ML, fSmall(), TEXT);
+        text(c, "1. On a phone, join", 132, 52, D_ML, fSmall(), TEXT);
+        text(c, hal::netPortalName(), 132, 74, D_ML, fBody(), ACCENT);
+        text(c, "2. A page opens", 132, 100, D_ML, fSmall(), TEXT);
+        text(c, "(or go to 192.168.4.1)", 132, 120, D_ML, fTiny(), MUTED);
+        text(c, "3. Pick your home", 132, 144, D_ML, fSmall(), TEXT);
+        text(c, "Wi-Fi and save", 132, 164, D_ML, fSmall(), TEXT);
         if (hal::netSsid()[0]) button(c, RETRY, "USE SAVED", PANEL2);
         break;
       }
       case hal::Net::NoWifi:
-        text(c, "No Wi-Fi saved yet", W / 2, 90, MC, fTitle(), TEXT);
-        text(c, "Ask a grown-up to set it up", W / 2, 120, MC, fSmall(), MUTED);
+        text(c, "No Wi-Fi saved yet", W / 2, 90, D_MC, fTitle(), TEXT);
+        text(c, "Ask a grown-up to set it up", W / 2, 120, D_MC, fSmall(), MUTED);
         button(c, SETUP, "SET UP WI-FI", GREEN);
         break;
       case hal::Net::Failed:
         snprintf(buf, sizeof(buf), "Couldn't join %s", hal::netSsid());
-        textFit(c, buf, W / 2, 76, 300, MC, fTitle(), TEXT);
-        text(c, "Check the password or move closer", W / 2, 104, MC, fSmall(), MUTED);
+        textFit(c, buf, W / 2, 76, 300, D_MC, fTitle(), TEXT);
+        text(c, "Check the password or move closer", W / 2, 104, D_MC, fSmall(), MUTED);
         button(c, RETRY, "TRY AGAIN", GREEN);
         button(c, SETUP, "SET UP", PANEL2);
         button(c, FORGET, "FORGET WI-FI", GREY, true, fTiny());
         break;
       case hal::Net::Off:
       default:
-        text(c, "Link is off", W / 2, 90, MC, fTitle(), TEXT);
-        text(c, "It turns off by itself to save battery", W / 2, 120, MC, fSmall(), MUTED);
+        text(c, "Link is off", W / 2, 90, D_MC, fTitle(), TEXT);
+        text(c, "It turns off by itself to save battery", W / 2, 120, D_MC, fSmall(), MUTED);
         button(c, RETRY, "LINK AGAIN", GREEN);
         break;
     }
