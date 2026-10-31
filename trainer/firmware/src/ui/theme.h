@@ -34,8 +34,8 @@ constexpr uint32_t BLACK = 0x000000;
 // Stat colours: PAC, SHO, PAS, DEF.
 constexpr uint32_t STAT_COL[4] = {0x3b9eff, 0xff6b3d, 0x2bd4a0, 0xb77dff};
 
-// Text datum values (LovyanGFX textdatum_t).
-constexpr uint8_t TL = 0, TC = 1, TR = 2, ML = 4, MC = 5, MR = 6, BL = 8, BC = 9, BR = 10;
+// Text datum values (LovyanGFX textdatum_t). Prefixed: the ESP32 SDK defines MR, BR... as macros.
+constexpr uint8_t D_TL = 0, D_TC = 1, D_TR = 2, D_ML = 4, D_MC = 5, D_MR = 6, D_BL = 8, D_BC = 9, D_BR = 10;
 
 // Fonts (ASCII only).
 inline const lgfx::IFont* fSmall() { return &fonts::FreeSans9pt7b; }
