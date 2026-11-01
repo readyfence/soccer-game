@@ -1,0 +1,47 @@
+/* Trainer setup guide (setup/index.html), on top of site.css. */
+.guide { padding: 120px 0 80px; }
+.guide h1 { font-size: clamp(36px, 6vw, 64px); max-width: 16ch; margin-bottom: 16px; }
+.guide section { padding: 0; margin-top: 48px; }
+.guide h2 { font-size: clamp(24px, 3vw, 32px); max-width: none; margin-bottom: 14px; }
+.guide a:not(.btn):not(.logo) { color: var(--mint); }
+q { color: var(--text); font-weight: 700; }
+q::before, q::after { color: var(--muted); }
+
+.checklist { list-style: none; display: grid; gap: 10px; }
+.checklist li { padding-left: 30px; position: relative; color: var(--muted); }
+.checklist li::before { content: '✓'; position: absolute; left: 0; color: var(--mint); font-weight: 900; }
+.checklist b { color: var(--text); }
+
+.steps { list-style: none; display: grid; gap: 18px; margin-top: 48px; }
+.steps > li { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 24px 26px; scroll-margin-top: 90px; }
+.step-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.step-head h2 { margin: 0; font-size: clamp(22px, 2.6vw, 28px); }
+.num {
+  width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #111; font-weight: 900; font-size: 20px;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+}
+.time { margin-left: auto; font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.steps ol, .steps ul.modes { padding-left: 22px; display: grid; gap: 10px; color: var(--muted); }
+.steps ol li::marker { color: var(--accent); font-weight: 900; }
+.steps b { color: var(--text); }
+.steps .btn.small { margin-left: 6px; vertical-align: middle; }
+.tip { margin-top: 16px; padding: 12px 16px; border-radius: 10px; background: rgba(111, 240, 173, 0.08); border-left: 3px solid var(--mint); color: var(--muted); }
+.tip b { color: var(--text); }
+
+.parents { background: linear-gradient(160deg, rgba(29, 79, 214, 0.18), var(--panel)); border: 1px solid var(--line); border-radius: 18px; padding: 24px 26px; }
+.parents p { color: var(--muted); }
+.parents b { color: var(--text); }
+
+.faq details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+.faq summary { cursor: pointer; font-weight: 800; font-size: 17px; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: '+'; color: var(--accent); font-weight: 900; }
+.faq details[open] summary::after { content: '−'; }
+.faq details p { color: var(--muted); margin-top: 10px; max-width: 70ch; }
+.faq b { color: var(--text); }
+
+@media (max-width: 640px) {
+  .steps > li, .parents { padding: 20px 18px; }
+  .time { margin-left: 0; }
+}

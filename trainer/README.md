@@ -21,6 +21,13 @@ Everything on the device is made up: no real clubs, players or brands.
 - Home Wi-Fi that both the trainer and the game computer use. 2.4 GHz is needed; most home
   routers provide it.
 
+## Setting one up for someone else
+
+Send them to **`/setup/`** on the game's website (for example `https://your-domain/setup/`).
+It walks a non-technical family through installing from the browser, joining Wi-Fi with a
+phone, sending a player and syncing back, with a troubleshooting section. The page lives in
+`setup/index.html`.
+
 ## Putting the firmware on the CoreS3
 
 You only need to do this once, and again whenever the trainer code changes.

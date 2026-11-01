@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trainer Setup Guide</title>
+    <meta name="description" content="Set up the Socker 26 handheld trainer on an M5Stack CoreS3 in about ten minutes. No apps or coding needed." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>" />
+    <link rel="stylesheet" href="/src/site.css" />
+    <link rel="stylesheet" href="/src/setup.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="logo" href="/">SOCKER<span>26</span></a>
+      <nav>
+        <a href="#install">Install</a>
+        <a href="#wifi">Wi-Fi</a>
+        <a href="#send">Send a player</a>
+        <a href="#help">Help</a>
+      </nav>
+      <a class="btn small" href="/play/">Play</a>
+    </header>
+
+    <main class="guide">
+      <div class="wrap">
+        <p class="kicker">Trainer setup guide</p>
+        <h1>Set up your trainer in about ten minutes.</h1>
+        <p class="lede">No apps, no coding, nothing to install on your computer. You need a grown-up for steps 1 and 2; after that, kids can do it on their own.</p>
+
+        <section class="need">
+          <h2>What you need</h2>
+          <ul class="checklist">
+            <li><b>An M5Stack CoreS3</b>, the small square touchscreen device.</li>
+            <li><b>A USB-C cable that carries data.</b> Many cables only charge; if the computer can't find the device, try another.</li>
+            <li><b>A Mac or PC with Chrome or Edge.</b> Safari, Firefox and iPads can't install it, but they can still play the game.</li>
+            <li><b>A phone</b>, to connect the trainer to your Wi-Fi.</li>
+            <li><b>Home Wi-Fi with a 2.4 GHz network.</b> Most home routers have one. The trainer can't use 5 GHz-only networks.</li>
+          </ul>
+        </section>
+
+        <ol class="steps">
+          <li id="install">
+            <div class="step-head"><span class="num">1</span><h2>Install the trainer</h2><span class="time">5 minutes</span></div>
+            <ol>
+              <li>Plug the CoreS3 into the computer with the USB-C cable.</li>
+              <li>In Chrome or Edge, open the installer: <a class="btn small" href="/flasher/">Open the installer</a></li>
+              <li>Click <b>INSTALL</b>. A list of devices pops up: pick the one called <q>USB JTAG/serial debug unit</q> (or similar) and click <b>Connect</b>.</li>
+              <li>When it asks about erasing, <b>tick Erase</b>. This is only for the first install.</li>
+              <li>Wait about a minute while it installs. Don't unplug it.</li>
+              <li>The trainer restarts and shows <q>No player yet</q>. That means it worked.</li>
+            </ol>
+            <p class="tip"><b>Device not in the list?</b> Try a different cable. Or hold the small <b>reset button</b> on the side of the CoreS3 for 3 seconds until a green light flashes, then click INSTALL again.</p>
+          </li>
+
+          <li id="wifi">
+            <div class="step-head"><span class="num">2</span><h2>Connect it to your Wi-Fi</h2><span class="time">3 minutes</span></div>
+            <ol>
+              <li>On the trainer, tap <b>LINK</b>. It says <q>No Wi-Fi saved yet</q>. Tap <b>SET UP WI-FI</b>.</li>
+              <li>The trainer makes its own little Wi-Fi network called <b>Soccer-Trainer</b>. On your phone, scan the QR code on the trainer's screen, or open your phone's Wi-Fi settings and join <b>Soccer-Trainer</b> (no password).</li>
+              <li>A page called <q>Soccer Trainer Wi-Fi</q> opens on your phone. If it doesn't, open a browser on the phone and go to <b>192.168.4.1</b>.</li>
+              <li>Pick your home Wi-Fi, type its password, and put your child's name in <b>Coach name</b>. Tap <b>Save and connect</b>.</li>
+              <li>Your phone goes back to your normal Wi-Fi by itself. After a few seconds the trainer shows <b>Linked!</b> in green.</li>
+            </ol>
+            <p class="tip">You only do this once. From now on, tapping <b>LINK</b> connects straight away. To save battery, the trainer only uses Wi-Fi while the LINK screen is open.</p>
+          </li>
+
+          <li id="send">
+            <div class="step-head"><span class="num">3</span><h2>Send a player from the game</h2><span class="time">1 minute</span></div>
+            <ol>
+              <li>On the trainer, tap <b>LINK</b> and wait for <b>Linked!</b>.</li>
+              <li>On a computer or tablet on the <b>same Wi-Fi</b>, open the game: <a class="btn small" href="/play/">Play Socker 26</a></li>
+              <li>Start a <b>Career</b> (Youth to Pro) if you haven't already. Your squad lives there.</li>
+              <li>Click <b>Trainer</b> (in the menu or the career screen). The status next to the address may say <q>Connected</q>, or <q>Can't check from https, just try Send</q>. Both are fine.</li>
+              <li>Pick a player and click <b>SEND</b>. A page opens saying the player is on the trainer, then takes you back to the game.</li>
+            </ol>
+            <p class="tip"><b>Chrome asks to "access devices on your local network"?</b> Click <b>Allow</b>. That's the game talking to the trainer.</p>
+          </li>
+
+          <li id="train">
+            <div class="step-head"><span class="num">4</span><h2>Train!</h2><span class="time">every day</span></div>
+            <ul class="modes">
+              <li><b>Carry it</b> in a pocket. Walking and running build <b>pace</b>, even with the screen off.</li>
+              <li><b>LOG</b> real practice like shooting, passing or a team session to earn experience for that skill.</li>
+              <li><b>PLAN</b> shows today's drills from the weekly plan. Tick them off for bonus experience.</li>
+              <li><b>PLAY</b> four mini games: Penalties, Tilt Dribble, Keepy-Uppy and Tackle Time. Each costs one energy, and energy comes from moving and practising for real.</li>
+            </ul>
+            <p class="tip">The screen goes to sleep by itself to save battery; it keeps counting steps. Press the power button, or touch and hold the screen, to wake it. Hold the power button for 6 seconds to turn it off completely.</p>
+          </li>
+
+          <li id="sync">
+            <div class="step-head"><span class="num">5</span><h2>Bring your player back</h2><span class="time">1 minute</span></div>
+            <ol>
+              <li>On the trainer, tap <b>LINK</b> and wait for <b>Linked!</b>.</li>
+              <li>In the game, click <b>Trainer</b>, then <b>Sync from Trainer</b>.</li>
+              <li>The game shows what he gained. His stats go up wherever he plays, and he wears a <b>★</b>.</li>
+            </ol>
+            <p class="tip">Sync as often as you like; the player keeps training on the device. To train someone else, just SEND a different player. The trainer remembers everyone's progress.</p>
+          </li>
+        </ol>
+
+        <section class="parents">
+          <h2>For parents: the weekly plan</h2>
+          <p>While the trainer shows <b>Linked!</b>, scan the small QR code on its screen with your phone (or open <b>http://soccer-trainer.local</b>). You'll see your child's progress and step history, and you can set the drills for each day of the week.</p>
+        </section>
+
+        <section class="faq" id="help">
+          <h2>If something isn't working</h2>
+          <details>
+            <summary>The installer can't find the CoreS3</summary>
+            <p>Use a different USB-C cable (most problems are charge-only cables), plug straight into the computer rather than a hub, and use Chrome or Edge. Then hold the side reset button for 3 seconds until the green light flashes and click INSTALL again.</p>
+          </details>
+          <details>
+            <summary>The trainer never says "Linked!"</summary>
+            <p>Check the Wi-Fi password and that you picked a 2.4 GHz network (names ending in "5G" are usually 5 GHz only). Move closer to the router. On the trainer, use <b>MORE → WI-FI SETUP</b> to enter it again, or <b>FORGET WI-FI</b> to start over.</p>
+          </details>
+          <details>
+            <summary>The game says "Not found", or SEND opens a page that won't load</summary>
+            <p>Make sure the trainer is still on the LINK screen showing <b>Linked!</b>. It turns Wi-Fi off when you leave that screen, and after 10 minutes with nothing happening. Also check that the computer is on the same Wi-Fi. If it still can't connect, look at the Link screen: under <q>soccer-trainer.local</q> it shows a number like <b>192.168.1.57</b>. Type that number into the <b>Trainer address</b> box in the game's Trainer screen and try again.</p>
+          </details>
+          <details>
+            <summary>Two trainers in the same house</summary>
+            <p>Both call themselves soccer-trainer.local, so use each trainer's number (shown on its Link screen) in the game's Trainer address box.</p>
+          </details>
+          <details>
+            <summary>Updating the trainer later</summary>
+            <p>Open the <a href="/flasher/">installer</a> again and click INSTALL. This time <b>don't tick Erase</b>; that keeps the player, training history and Wi-Fi settings.</p>
+          </details>
+          <details>
+            <summary>The installer page won't work at all</summary>
+            <p>Use Espressif's official tool instead. Download <a href="/flasher/soccer-trainer-cores3-full.bin" download>soccer-trainer-cores3-full.bin</a>, open <a href="https://espressif.github.io/esptool-js/" rel="noopener">espressif.github.io/esptool-js</a> in Chrome, click <b>Connect</b>, set Flash Address to <b>0x0</b>, choose the file and click <b>Program</b>. This wipes the trainer, so only use it for a first install.</p>
+          </details>
+          <details>
+            <summary>The screen is blank or it keeps restarting</summary>
+            <p>Hold the power button for 6 seconds to turn it off, then press it once to turn it on. If that doesn't help, reinstall with Erase ticked. Still stuck? Tell the person who sent you this guide.</p>
+          </details>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <p><a href="/">Socker 26</a> · <a href="/play/">Play</a> · <a href="/flasher/">Installer</a></p>
+      <p class="small">All clubs and players in Socker 26 are fictional.</p>
+    </footer>
+  </body>
+</html>
